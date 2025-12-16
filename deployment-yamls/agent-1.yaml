@@ -1,0 +1,24 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: rh-analyze-simple
+  namespace: kagent
+spec:
+  description: "MVP agent: answers simple questions using Llama Stack"
+  type: Declarative
+  declarative:
+    modelConfig: lls-openai
+    stream: false
+    systemMessage: |-
+      You are Red Hat Analyze (MVP).
+      Answer clearly and concisely.
+      If you are unsure, say so.
+    a2aConfig:
+      skills:
+        - id: answer
+          name: answer
+          description: Answer a user question in one response.
+          tags:
+            - mvp
+            - qa
+

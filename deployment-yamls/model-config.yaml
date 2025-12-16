@@ -1,0 +1,10 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: lls-openai
+  namespace: kagent
+spec:
+  provider: OpenAI
+  model: "ollama/llama3.2:1b"
+  openAI:
+    baseUrl: "http://llamastack-with-userconfig-service.rh-analyze.svc.cluster.local:8321/v1"

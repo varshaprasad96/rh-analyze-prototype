@@ -1,0 +1,16 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llamastack-ollama-config
+data:
+  run.yaml: |
+    providers:
+      inference:
+        - provider_id: ollama
+          provider_type: remote::ollama
+          config:
+            url: ${env.OLLAMA_URL}
+    models:
+      - model_id: ${env.INFERENCE_MODEL}
+        provider_id: ollama
+
