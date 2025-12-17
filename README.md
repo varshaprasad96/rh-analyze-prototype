@@ -46,8 +46,23 @@ OCP_PASSWORD=your-password
 make login
 ```
 
+## Deployment
+
+Deploy the complete multi-agent platform (vLLM + Llama Stack + Agent):
+
+```bash
+# Deploy to a namespace
+make deploy NAMESPACE=my-namespace
+
+# Check status
+make status NAMESPACE=my-namespace
+```
+
+See [DEPLOYMENT.md](DEPLOYMENT.md) for detailed deployment options and [cagent-helloworld/README.md](cagent-helloworld/README.md) for testing the agent.
+
 ## Documentation
 
+- [Deployment Guide](DEPLOYMENT.md) - Step-by-step deployment instructions
 - [Architecture Proposal](docs/architecture-proposal.md) - Complete design document
 - [Technology Analysis](docs/) - Individual component documentation
 

@@ -1,0 +1,86 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hello-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: hello-agent
+    component: cagent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: hello-agent
+  template:
+    metadata:
+      labels:
+        app: hello-agent
+        component: cagent
+    spec:
+      initContainers:
+      - name: setup-cagent-data
+        image: busybox:latest
+        command: ['sh', '-c', 'mkdir -p /tmp/.cagent && chmod 777 /tmp/.cagent']
+        volumeMounts:
+        - name: cagent-data
+          mountPath: /tmp
+      containers:
+      - name: cagent
+        image: your-registry/hello-agent:v1
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: api
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "8080"
+        - name: HOME
+          value: "/tmp"
+        - name: OPENAI_API_KEY
+          value: "dummy-key-for-llamastack"
+        - name: TELEMETRY_ENABLED
+          value: "false"
+        volumeMounts:
+        - name: cagent-data
+          mountPath: /tmp
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 1Gi
+        livenessProbe:
+          httpGet:
+            path: /api/ping
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/ping
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5
+      volumes:
+      - name: cagent-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: hello-agent
+spec:
+  type: ClusterIP
+  ports:
+  - port: 8080
+    targetPort: 8080
+    protocol: TCP
+    name: api
+  selector:
+    app: hello-agent
+

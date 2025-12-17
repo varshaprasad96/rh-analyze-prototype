@@ -1,0 +1,43 @@
+apiVersion: serving.kserve.io/v1beta1
+kind: InferenceService
+metadata:
+  name: qwen3-14b-awq
+  namespace: NAMESPACE_PLACEHOLDER
+  annotations:
+    opendatahub.io/connections: qwen3-14b-awq
+    opendatahub.io/genai-use-case: chat
+    opendatahub.io/hardware-profile-name: gpu-profile
+    opendatahub.io/hardware-profile-namespace: redhat-ods-applications
+    opendatahub.io/model-type: generative
+    openshift.io/display-name: qwen3-14b-awq
+    security.opendatahub.io/enable-auth: "false"
+    serving.kserve.io/deploymentMode: RawDeployment
+  labels:
+    opendatahub.io/dashboard: "true"
+    opendatahub.io/genai-asset: "true"
+spec:
+  predictor:
+    automountServiceAccountToken: false
+    maxReplicas: 1
+    minReplicas: 1
+    model:
+      args:
+      - --dtype=auto
+      - --max-model-len=32768
+      - --enable-auto-tool-choice
+      - --tool-call-parser=hermes
+      - --gpu-memory-utilization=0.90
+      modelFormat:
+        name: vLLM
+      name: ""
+      resources:
+        limits:
+          cpu: "4"
+          memory: 8Gi
+          nvidia.com/gpu: "1"
+        requests:
+          cpu: "2"
+          memory: 4Gi
+          nvidia.com/gpu: "1"
+      runtime: qwen3-14b-awq
+      storageUri: hf://Qwen/Qwen3-14B-AWQ
