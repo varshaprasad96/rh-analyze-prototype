@@ -19,7 +19,7 @@ spec:
     spec:
       initContainers:
       - name: setup-cagent-data
-        image: busybox:latest
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
         command: ['sh', '-c', 'mkdir -p /tmp/.cagent && chmod 777 /tmp/.cagent']
         volumeMounts:
         - name: cagent-data
