@@ -1,0 +1,61 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-postgres-pvc
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: mlflow-postgres-secret
+type: Opaque
+stringData:
+  POSTGRESQL_DATABASE: mlflow
+  POSTGRESQL_USER: mlflow
+  POSTGRESQL_PASSWORD: mlflowpass
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-postgres
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-postgres
+  template:
+    metadata:
+      labels:
+        app: mlflow-postgres
+    spec:
+      containers:
+        - name: postgres
+          image: quay.io/sclorg/postgresql-16-c10s:latest
+          ports:
+            - containerPort: 5432
+          envFrom:
+            - secretRef:
+                name: mlflow-postgres-secret
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mlflow-postgres-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-postgres
+spec:
+  selector:
+    app: mlflow-postgres
+  ports:
+    - name: pg
+      port: 5432
+      targetPort: 5432
