@@ -1,0 +1,18 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: llama-stack-model
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-helloworld
+spec:
+  provider: OpenAI
+  model: vllm-inference-1/qwen3-14b-awq
+  openai:
+    baseURL: http://llama-stack-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321/v1
+  # Llama Stack doesn't require authentication
+  # The kagent controller expects an API key secret, but we'll create a dummy one
+  apiKeySecretRef:
+    name: llama-stack-dummy-key
+    key: api-key
+

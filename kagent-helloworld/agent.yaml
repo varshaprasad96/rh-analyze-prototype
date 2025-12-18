@@ -1,0 +1,31 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: hello-kagent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-helloworld
+spec:
+  type: Declarative
+  description: "Hello world agent using Llama Stack via kagent"
+  declarative:
+    modelConfig: llama-stack-model
+    stream: false
+    systemMessage: |
+      You are a helpful AI assistant powered by Llama Stack through kagent.
+      
+      Answer questions clearly and concisely about:
+      - Multi-agent platforms (cagent, kagent, kagenti)
+      - ML platforms (MLflow, Llama Stack)
+      - Cloud-native deployment
+      
+      Be friendly and helpful.
+    a2aConfig:
+      skills:
+        - id: answer
+          name: answer
+          description: Answer user questions
+          tags:
+            - qa
+            - hello-world
+

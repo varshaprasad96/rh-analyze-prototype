@@ -1,20 +1,20 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello-agent
+  name: hello-cagent
   namespace: NAMESPACE_PLACEHOLDER
   labels:
-    app: hello-agent
+    app: hello-cagent
     component: cagent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: hello-agent
+      app: hello-cagent
   template:
     metadata:
       labels:
-        app: hello-agent
+        app: hello-cagent
         component: cagent
     spec:
       initContainers:
@@ -82,10 +82,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: hello-agent
+  name: hello-cagent
   namespace: NAMESPACE_PLACEHOLDER
   labels:
-    app: hello-agent
+    app: hello-cagent
 spec:
   type: ClusterIP
   ports:
@@ -94,5 +94,5 @@ spec:
     protocol: TCP
     name: api
   selector:
-    app: hello-agent
+    app: hello-cagent
 

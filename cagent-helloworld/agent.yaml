@@ -23,9 +23,9 @@ agents:
       
       Be friendly, accurate, and helpful in all your responses.
     
-    # RAG and MCP tools available to the agent
+    # MCP tools available to the agent
+    # Note: RAG is handled by Llama Stack internally via the models API
     toolsets:
-      - type: builtin::rag  # Llama Stack builtin RAG tools for knowledge base
       - type: mcp
         remote:
           url: "https://api.githubcopilot.com/mcp/x/repos/readonly"
