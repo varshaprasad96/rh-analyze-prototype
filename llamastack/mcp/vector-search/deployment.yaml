@@ -1,0 +1,46 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vector-search-mcp
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vector-search-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: vector-search-mcp
+  template:
+    metadata:
+      labels:
+        app: vector-search-mcp
+    spec:
+      containers:
+      - name: fastmcp
+        image: IMAGE_PLACEHOLDER
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+          name: mcp
+          protocol: TCP
+        envFrom:
+        - configMapRef:
+            name: vector-search-config
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        # FastMCP SSE transport doesn't have /health - use TCP probe
+        livenessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        readinessProbe:
+          tcpSocket:
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 5

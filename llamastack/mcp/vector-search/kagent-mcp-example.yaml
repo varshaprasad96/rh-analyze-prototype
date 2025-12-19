@@ -1,0 +1,13 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: llamastack-rag
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vector-search-mcp
+spec:
+  url: "http://vector-search-mcp.NAMESPACE_PLACEHOLDER.svc.cluster.local:8080"
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  description: "Llama Stack vector store search for RAG"
+  tools: ["search_knowledge_base"]

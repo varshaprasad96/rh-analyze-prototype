@@ -1,4 +1,4 @@
-.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-vectorstore deploy-mcp-secrets deploy-agent build-agent build-vectorstore clean status
+.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-vectorstore deploy-agent build-agent build-vectorstore clean status
 
 # Load environment variables from .env.local
 include .env.local
@@ -62,7 +62,7 @@ console:
 	@echo "$(OCP_CONSOLE)"
 
 # Deployment targets
-deploy: deploy-vllm build-agent deploy-llamastack deploy-vectorstore deploy-mcp-secrets deploy-agent
+deploy: deploy-vllm build-agent deploy-llamastack deploy-vectorstore deploy-agent
 	@echo ""
 	@echo "✓ Complete deployment in namespace: $(NAMESPACE)"
 	@echo ""
@@ -154,20 +154,6 @@ deploy-vectorstore:
 	sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/vectorstore/configmap.yaml | \
 	sed "s/VECTORSTORE_ID_PLACEHOLDER/$$VECTORSTORE_ID/g" | oc apply -f -
 	@echo "  ✓ ConfigMap created with vector store ID"
-
-deploy-mcp-secrets:
-	@echo ""
-	@echo "Deploying MCP secrets to namespace: $(NAMESPACE)"
-	@echo ""
-	@echo "→ Creating GitHub MCP token secret..."
-	@if [ -z "$(GITHUB_MCP_TOKEN)" ]; then \
-		echo "  ⚠ GITHUB_MCP_TOKEN not set in .env.local"; \
-		echo "  Skipping GitHub MCP integration"; \
-	else \
-		sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/mcp/github-secret.yaml | \
-		sed "s/GITHUB_TOKEN_PLACEHOLDER/$(GITHUB_MCP_TOKEN)/g" | oc apply -f -; \
-		echo "  ✓ GitHub MCP token secret created"; \
-	fi
 
 build-agent:
 	@echo ""

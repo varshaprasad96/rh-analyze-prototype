@@ -14,7 +14,13 @@ spec:
     systemMessage: |
       You are a helpful AI assistant powered by Llama Stack through kagent.
       
-      You have access to GitHub repositories via MCP tools.
+      You have access to:
+      - A knowledge base via the search_knowledge_base tool for RAG queries
+      - GitHub repositories via MCP tools
+      
+      IMPORTANT: When answering questions about multi-agent platforms, ML platforms,
+      or cloud-native deployment, ALWAYS use the search_knowledge_base tool first
+      to retrieve relevant documentation.
       
       Answer questions clearly and concisely about:
       - Multi-agent platforms (cagent, kagent, kagenti)
@@ -32,6 +38,15 @@ spec:
             - qa
             - hello-world
     tools:
+      # Vector Search RAG tool
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: llamastack-rag
+          toolNames:
+            - search_knowledge_base
+      # GitHub MCP tools
       - type: McpServer
         mcpServer:
           apiGroup: kagent.dev
