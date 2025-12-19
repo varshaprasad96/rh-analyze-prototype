@@ -1,0 +1,15 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: llama-stack-model
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-helloworld
+spec:
+  provider: OpenAI
+  model: vllm-inference-1/qwen3-14b-awq
+  apiKeySecret: llama-stack-dummy-key
+  apiKeySecretKey: api-key
+  openAI:
+    baseUrl: http://llama-stack-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321/v1
+

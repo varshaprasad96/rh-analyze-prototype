@@ -34,6 +34,9 @@ OCP_CONSOLE=https://console-openshift-console.apps.your-cluster.openshiftapps.co
 OCP_AUTH_TYPE=htpasswd-cluster-admin
 OCP_USERNAME=your-username
 OCP_PASSWORD=your-password
+
+# GitHub MCP Token (for agent MCP integration)
+GITHUB_MCP_TOKEN=your-github-token
 ```
 
 **Note:** The `.env.local` file is git-ignored to prevent credential exposure.

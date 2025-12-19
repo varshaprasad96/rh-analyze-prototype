@@ -1,4 +1,4 @@
-.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-agent build-agent clean status
+.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-vectorstore deploy-mcp-secrets deploy-agent build-agent build-vectorstore clean status
 
 # Load environment variables from .env.local
 include .env.local
@@ -18,9 +18,11 @@ help:
 	@echo "  make console            - Display console URL"
 	@echo ""
 	@echo "Deployment:"
-	@echo "  make deploy NAMESPACE=<name>       - Deploy complete stack (vLLM + Llama Stack + Agent)"
+	@echo "  make deploy NAMESPACE=<name>       - Deploy complete stack (vLLM + Llama Stack + VectorStore + Agent)"
 	@echo "  make deploy-vllm NAMESPACE=<name>  - Deploy only vLLM model"
 	@echo "  make deploy-llamastack NAMESPACE=<name> - Deploy only Llama Stack"
+	@echo "  make build-vectorstore NAMESPACE=<name> - Build vectorstore-setup image"
+	@echo "  make deploy-vectorstore NAMESPACE=<name> - Setup vector store with docs"
 	@echo "  make build-agent NAMESPACE=<name>  - Build agent image on cluster"
 	@echo "  make deploy-agent NAMESPACE=<name> - Deploy hello-agent"
 	@echo "  make status NAMESPACE=<name>       - Check deployment status"
@@ -60,7 +62,7 @@ console:
 	@echo "$(OCP_CONSOLE)"
 
 # Deployment targets
-deploy: deploy-vllm build-agent deploy-llamastack deploy-agent
+deploy: deploy-vllm build-agent deploy-llamastack deploy-vectorstore deploy-mcp-secrets deploy-agent
 	@echo ""
 	@echo "✓ Complete deployment in namespace: $(NAMESPACE)"
 	@echo ""
@@ -68,6 +70,8 @@ deploy: deploy-vllm build-agent deploy-llamastack deploy-agent
 	@echo "  - vLLM:        http://qwen3-14b-awq-predictor.$(NAMESPACE).svc.cluster.local:8080"
 	@echo "  - Llama Stack: http://llama-stack-service.$(NAMESPACE).svc.cluster.local:8321"
 	@echo "  - Hello Agent: http://hello-agent.$(NAMESPACE).svc.cluster.local:8080"
+	@echo ""
+	@echo "Vector Store: docs-vectorstore (6 documentation files)"
 	@echo ""
 	@echo "See cagent-helloworld/README.md for testing instructions"
 
@@ -113,6 +117,57 @@ deploy-llamastack:
 	@timeout 300 bash -c 'until oc get pods -n $(NAMESPACE) -l app=llama-stack -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for Llama Stack pod..."; sleep 5; done' || \
 		(echo "  ⚠ Timeout waiting for Llama Stack. Check status with: make status NAMESPACE=$(NAMESPACE)" && exit 0)
 	@echo "  ✓ Llama Stack is ready"
+
+build-vectorstore:
+	@echo ""
+	@echo "Building vectorstore-setup image in namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Creating BuildConfig and ImageStream..."
+	@sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/vectorstore/buildconfig.yaml | oc apply -f -
+	@echo "  ✓ BuildConfig created"
+	@echo ""
+	@echo "→ Starting image build..."
+	@cd llamastack/vectorstore && oc start-build vectorstore-setup -n $(NAMESPACE) --from-dir=. --follow
+	@echo "  ✓ Image build complete"
+
+deploy-vectorstore:
+	@echo ""
+	@echo "Setting up vector store in namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Checking if image exists..."
+	@oc get imagestream vectorstore-setup -n $(NAMESPACE) >/dev/null 2>&1 || \
+		(echo "  Image not found. Building..." && $(MAKE) build-vectorstore NAMESPACE=$(NAMESPACE))
+	@echo ""
+	@echo "→ Deploying vectorstore setup Job..."
+	@VECTORSTORE_IMAGE=$$(oc get imagestream vectorstore-setup -n $(NAMESPACE) -o jsonpath='{.status.tags[0].items[0].dockerImageReference}'); \
+	sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/vectorstore/job.yaml | \
+	sed "s|IMAGE_PLACEHOLDER|$$VECTORSTORE_IMAGE|g" | oc apply -f -
+	@echo "  ✓ Job created"
+	@echo ""
+	@echo "→ Waiting for vector store setup to complete..."
+	@timeout 300 bash -c 'until oc get job vectorstore-setup -n $(NAMESPACE) -o jsonpath="{.status.conditions[?(@.type==\"Complete\")].status}" 2>/dev/null | grep -q "True"; do echo "  Setting up vector store..."; sleep 5; done' || \
+		(echo "  ⚠ Timeout waiting for vector store setup. Check logs: oc logs job/vectorstore-setup -n $(NAMESPACE)" && exit 0)
+	@echo "  ✓ Vector store setup complete"
+	@echo ""
+	@echo "→ Creating vectorstore ConfigMap..."
+	@VECTORSTORE_ID=$$(oc logs job/vectorstore-setup -n $(NAMESPACE) | grep "Vector Store ID:" | cut -d: -f2 | tr -d ' '); \
+	sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/vectorstore/configmap.yaml | \
+	sed "s/VECTORSTORE_ID_PLACEHOLDER/$$VECTORSTORE_ID/g" | oc apply -f -
+	@echo "  ✓ ConfigMap created with vector store ID"
+
+deploy-mcp-secrets:
+	@echo ""
+	@echo "Deploying MCP secrets to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Creating GitHub MCP token secret..."
+	@if [ -z "$(GITHUB_MCP_TOKEN)" ]; then \
+		echo "  ⚠ GITHUB_MCP_TOKEN not set in .env.local"; \
+		echo "  Skipping GitHub MCP integration"; \
+	else \
+		sed 's/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g' llamastack/mcp/github-secret.yaml | \
+		sed "s/GITHUB_TOKEN_PLACEHOLDER/$(GITHUB_MCP_TOKEN)/g" | oc apply -f -; \
+		echo "  ✓ GitHub MCP token secret created"; \
+	fi
 
 build-agent:
 	@echo ""
@@ -177,11 +232,21 @@ status:
 clean:
 	@echo "Removing deployments from namespace: $(NAMESPACE)"
 	@echo ""
-	@echo "→ Removing Hello Agent..."
-	@oc delete deployment hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
-	@oc delete service hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
+	@echo "→ Removing cagent Agent..."
+	@oc delete deployment hello-cagent -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
+	@oc delete service hello-cagent -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
 	@oc delete buildconfig hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  BuildConfig not found"
 	@oc delete imagestream hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  ImageStream not found"
+	@echo ""
+	@echo "→ Removing kagent Agent..."
+	@oc delete agent hello-kagent -n $(NAMESPACE) 2>/dev/null || echo "  Agent CRD not found"
+	@oc delete modelconfig llama-stack-model -n $(NAMESPACE) 2>/dev/null || echo "  ModelConfig not found"
+	@oc delete secret llama-stack-dummy-key -n $(NAMESPACE) 2>/dev/null || echo "  Secret not found"
+	@echo ""
+	@echo "→ Removing Vector Store Setup..."
+	@oc delete job vectorstore-setup -n $(NAMESPACE) 2>/dev/null || echo "  Job not found"
+	@oc delete buildconfig vectorstore-setup -n $(NAMESPACE) 2>/dev/null || echo "  BuildConfig not found"
+	@oc delete imagestream vectorstore-setup -n $(NAMESPACE) 2>/dev/null || echo "  ImageStream not found"
 	@echo ""
 	@echo "→ Removing Llama Stack..."
 	@oc delete llamastackdistribution llama-stack -n $(NAMESPACE) 2>/dev/null || echo "  LlamaStackDistribution not found"

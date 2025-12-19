@@ -1,0 +1,32 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: vectorstore-setup
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vectorstore-setup
+    component: llama-stack
+spec:
+  ttlSecondsAfterFinished: 300
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        app: vectorstore-setup
+        component: llama-stack
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: setup
+        image: IMAGE_PLACEHOLDER
+        env:
+        - name: LLAMA_STACK_URL
+          value: "http://llama-stack-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+

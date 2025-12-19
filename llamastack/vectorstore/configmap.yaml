@@ -1,0 +1,13 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vectorstore-config
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: llama-stack
+    component: vectorstore
+data:
+  VECTOR_STORE_ID: "VECTORSTORE_ID_PLACEHOLDER"
+  VECTOR_STORE_NAME: "docs-vectorstore"
+  EMBEDDING_MODEL: "granite-embedding-125m"
+

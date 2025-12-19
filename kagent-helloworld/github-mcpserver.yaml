@@ -1,0 +1,21 @@
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: github-readonly
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-helloworld
+spec:
+  url: "https://api.githubcopilot.com/mcp/x/repos/readonly"
+  timeout: 30s
+  sseReadTimeout: 5m0s
+  description: "GitHub MCP server for read-only repository access"
+  tools: []  # Auto-discover all available tools from the MCP server
+  headersFrom:
+    - name: "Authorization"
+      valueFrom:
+        name: github-mcp-token
+        type: Secret
+        key: token
+        valueRef: github-mcp-token
+

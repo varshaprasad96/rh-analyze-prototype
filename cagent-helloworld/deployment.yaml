@@ -1,25 +1,25 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: hello-agent
+  name: hello-cagent
   namespace: NAMESPACE_PLACEHOLDER
   labels:
-    app: hello-agent
+    app: hello-cagent
     component: cagent
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: hello-agent
+      app: hello-cagent
   template:
     metadata:
       labels:
-        app: hello-agent
+        app: hello-cagent
         component: cagent
     spec:
       initContainers:
       - name: setup-cagent-data
-        image: busybox:latest
+        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
         command: ['sh', '-c', 'mkdir -p /tmp/.cagent && chmod 777 /tmp/.cagent']
         volumeMounts:
         - name: cagent-data
@@ -41,6 +41,18 @@ spec:
           value: "dummy-key-for-llamastack"
         - name: TELEMETRY_ENABLED
           value: "false"
+        - name: VECTOR_STORE_ID
+          valueFrom:
+            configMapKeyRef:
+              name: vectorstore-config
+              key: VECTOR_STORE_ID
+              optional: true
+        - name: GITHUB_MCP_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: github-mcp-token
+              key: token
+              optional: false
         volumeMounts:
         - name: cagent-data
           mountPath: /tmp
@@ -70,10 +82,10 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: hello-agent
+  name: hello-cagent
   namespace: NAMESPACE_PLACEHOLDER
   labels:
-    app: hello-agent
+    app: hello-cagent
 spec:
   type: ClusterIP
   ports:
@@ -82,5 +94,5 @@ spec:
     protocol: TCP
     name: api
   selector:
-    app: hello-agent
+    app: hello-cagent
 

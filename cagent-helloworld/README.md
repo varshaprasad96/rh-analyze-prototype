@@ -24,6 +24,16 @@ The agent connects to Llama Stack via OpenAI-compatible API:
 - **Model:** `vllm-inference-1/qwen3-14b-awq`
 - **Max tokens:** 4096
 - **Temperature:** 0.7
+- **RAG:** Enabled with docs-vectorstore (6 documentation files)
+- **Vector Store ID:** Available via `VECTOR_STORE_ID` environment variable
+
+### Knowledge Base
+
+The agent has access to documentation about:
+- Multi-agent architecture (cagent, kagent, kagenti)
+- ML platforms (MLflow, Llama Stack)
+- Cloud-native deployment patterns
+- Complete architecture proposal
 
 ## Deployment
 
