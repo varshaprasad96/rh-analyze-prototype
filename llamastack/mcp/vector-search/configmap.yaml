@@ -1,0 +1,20 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vector-search-config
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vector-search-mcp
+data:
+  # Llama Stack endpoint
+  LLAMASTACK_URL: "http://llama-stack-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321"
+  # Vector store IDs (comma-separated or JSON array)
+  VECTOR_STORE_IDS: "VECTOR_STORE_ID_PLACEHOLDER"
+  # Search parameters
+  MAX_RESULTS: "3"
+  SEARCH_MODE: "vector"
+  REWRITE_QUERY: "true"
+  COMBINE_RESULTS: "true"
+  # Server port
+  MCP_SERVER_PORT: "8080"
+

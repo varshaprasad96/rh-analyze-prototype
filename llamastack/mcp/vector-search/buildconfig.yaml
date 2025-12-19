@@ -1,0 +1,29 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: vector-search-mcp
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vector-search-mcp
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: vector-search-mcp
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: vector-search-mcp
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: vector-search-mcp:latest
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []
+
