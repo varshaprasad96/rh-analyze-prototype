@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llama-stack-config
+  namespace: rh-analyze
+  labels:
+    opendatahub.io/dashboard: "true"
+data:
+  run.yaml: |
+    # Llama Stack Configuration with MCP Tools
+    version: '2'
+    image_name: starter
+    apis:
+    - inference
+    - agents
+    - tool_runtime
+    - safety
+    - vector_io
+    - files
+    - datasetio
+    - eval
+    - scoring
+    - files
+    providers:
+      inference:
+      - provider_id: ollama
+        provider_type: "remote::ollama"
+        config:
+          url: "http://ollama-server-service.ollama-dist.svc.cluster.local:11434"
+          # Note: Verify this endpoint matches your actual Ollama service
+      agents:
+      - provider_id: meta-reference
+        provider_type: inline::meta-reference
+        config:
+          persistence:
+            agent_state:
+              namespace: agents
+              backend: kv_default
+            responses:
+              table_name: responses
+              backend: sql_default
+      files:
+      - provider_id: meta-reference-files
+        provider_type: inline::localfs
+        config:
+          storage_dir: ${env.SQLITE_STORE_DIR}/files
+          metadata_store:
+            table_name: files_metadata
+            backend: sql_default
+      vector_io:
+      - provider_id: milvus
+        provider_type: inline::milvus
+        config:
+          db_path: ${env.SQLITE_STORE_DIR}/milvus.db
+          persistence:
+            namespace: vector_io::milvus
+            backend: kv_default
+      tool_runtime:
+      # RAG runtime - provides built-in RAG tools
+      - provider_id: rag-runtime
+        provider_type: inline::rag-runtime
+        config: {}
+      # MCP (Model Context Protocol) - provides MCP tool integration
+      - provider_id: model-context-protocol
+        provider_type: remote::model-context-protocol
+        config: {}
+    models:
+      - model_id: "llama3.2:1b"
+        provider_id: ollama
+        model_type: llm
+    tool_groups:
+    # Built-in RAG tool group
+    - toolgroup_id: builtin::rag
+      provider_id: rag-runtime
+    # MCP tool group (tools will be discovered from MCP servers)
+    - toolgroup_id: builtin::mcp
+      provider_id: model-context-protocol
+    metadata_store:
+      type: sqlite
+      db_path: ${env.SQLITE_STORE_DIR}/registry.db
+    storage:
+      backends:
+        kv_default:
+          type: kv_sqlite
+          db_path: ${env.SQLITE_STORE_DIR}/kvstore.db
+        sql_default:
+          type: sql_sqlite
+          db_path: ${env.SQLITE_STORE_DIR}/sql_store.db
+      stores:
+        metadata:
+          namespace: registry
+          backend: kv_default
+        inference:
+          table_name: inference_store
+          backend: sql_default
+        conversations:
+          table_name: openai_conversations
+          backend: sql_default
+    server:
+      port: 8321
+

@@ -1,0 +1,180 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: mlflow-agent-logger-scripts
+  namespace: rh-analyze
+data:
+  log_llamastack_agent_direct.py: |
+    #!/usr/bin/env python3
+    """
+    Log Llamastack Agent Wrapper Directly to MLflow
+    This script runs in the cluster to log the agent to MLflow.
+    """
+    import os
+    import sys
+    
+    import mlflow
+    
+    # Import the agent wrapper (will be in the same directory)
+    sys.path.insert(0, '/workspace')
+    from llamastack_agent_wrapper_direct import LlamastackAgentWrapper
+    
+    def main():
+        """Main entry point for logging the agent."""
+        # Get configuration from environment variables
+        mlflow_uri = os.getenv("MLFLOW_TRACKING_URI", "http://mlflow.rh-analyze.svc.cluster.local:5000")
+        llamastack_base_url = os.getenv(
+            "LLAMASTACK_BASE_URL", 
+            "http://llamastack-with-userconfig-service.rh-analyze.svc.cluster.local:8321"
+        )
+        agent_id = os.getenv("LLAMASTACK_AGENT_ID", "ollama/llama3.2:1b")
+        api_key = os.getenv("LLAMASTACK_API_KEY", "fake")
+        experiment_name = os.getenv("MLFLOW_EXPERIMENT", "llamastack-agent-wrapper-direct")
+        model_name = os.getenv("MLFLOW_MODEL_NAME", "llamastack-agent-wrapper-direct")
+        
+        # S3/MinIO configuration (for artifact storage)
+        s3_endpoint_url = os.getenv("MLFLOW_S3_ENDPOINT_URL", "http://mlflow-minio.rh-analyze.svc.cluster.local:9000")
+        aws_access_key_id = os.getenv("AWS_ACCESS_KEY_ID", "minio")
+        aws_secret_access_key = os.getenv("AWS_SECRET_ACCESS_KEY", "miniopass123")
+        
+        # Configure S3/MinIO credentials
+        os.environ["MLFLOW_S3_ENDPOINT_URL"] = s3_endpoint_url
+        os.environ["AWS_ACCESS_KEY_ID"] = aws_access_key_id
+        os.environ["AWS_SECRET_ACCESS_KEY"] = aws_secret_access_key
+        
+        # Set up MLflow
+        mlflow.set_tracking_uri(mlflow_uri)
+        mlflow.set_experiment(experiment_name)
+        
+        print(f"MLflow URI: {mlflow_uri}")
+        print(f"Llamastack Base URL: {llamastack_base_url}")
+        print(f"Agent ID: {agent_id}")
+        print(f"Experiment: {experiment_name}")
+        print(f"Model Name: {model_name}")
+        print()
+        
+        # Log the agent using file-based approach with set_model() (like LangGraph)
+        print("Logging Llamastack Agent Wrapper (direct instantiation pattern)...")
+        with mlflow.start_run():
+            # Set environment variables for the agent file to use
+            os.environ["LLAMASTACK_BASE_URL"] = llamastack_base_url
+            os.environ["LLAMASTACK_AGENT_ID"] = agent_id
+            os.environ["LLAMASTACK_API_KEY"] = api_key
+            
+            # Log using the file - the file has set_model() called in it
+            # This is the LangGraph pattern: define agent in file, instantiate and set_model() in file
+            agent_file = "/workspace/llamastack_agent_wrapper_direct.py"
+            logged_agent_info = mlflow.pyfunc.log_model(
+                python_model=agent_file,
+                artifact_path="agent",
+                registered_model_name=None,  # Skip registration for cluster testing
+            )
+            
+            # Log metadata
+            mlflow.set_tag("agent_type", "llamastack-agent-wrapper-direct")
+            mlflow.set_tag("wrapper_type", "direct-instantiation")
+            mlflow.set_tag("llamastack_base_url", llamastack_base_url)
+            mlflow.set_tag("agent_id", agent_id)
+            mlflow.set_tag("deployment", "cluster")
+            
+            run_id = mlflow.active_run().info.run_id
+            print(f"✓ Agent wrapper logged successfully!")
+            print(f"  Model URI: {logged_agent_info.model_uri}")
+            print(f"  Run ID: {run_id}")
+            print()
+            print(f"View in MLflow UI: {mlflow_uri}/#/experiments/0/runs/{run_id}")
+    
+    if __name__ == "__main__":
+        try:
+            main()
+        except Exception as e:
+            print(f"Error: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            sys.exit(1)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlflow-log-agent-direct
+  namespace: rh-analyze
+spec:
+  ttlSecondsAfterFinished: 300  # Clean up after 5 minutes
+  template:
+    metadata:
+      labels:
+        app: mlflow-log-agent
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: logger
+        image: ghcr.io/mlflow/mlflow:latest
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            # Install required packages to a writable location
+            pip install --no-cache-dir --target /tmp/packages "openai" "pydantic>=2.0.0" "boto3" -q
+            export PYTHONPATH=/tmp/packages:$PYTHONPATH
+            
+            # List files in ConfigMap for debugging
+            echo "Files in /config:"
+            ls -la /config/ || true
+            
+            # Copy agent wrapper file to workspace (from ConfigMap)
+            if [ -f /config/llamastack_agent_wrapper_direct.py ]; then
+              cp /config/llamastack_agent_wrapper_direct.py /workspace/
+              echo "✓ Copied agent wrapper from ConfigMap"
+            else
+              echo "✗ Agent wrapper file not found in ConfigMap"
+              echo "Available files:"
+              ls -la /config/
+              exit 1
+            fi
+            
+            # Add workspace to Python path
+            export PYTHONPATH=/workspace:/tmp/packages:$PYTHONPATH
+            
+            # Run the logging script
+            python /config/log_llamastack_agent_direct.py
+        env:
+          # MLflow tracking server connection
+          # Use service name directly (not FQDN) to avoid Host header issues
+          - name: MLFLOW_TRACKING_URI
+            value: "http://mlflow:5000"
+          # Llamastack connection
+          - name: LLAMASTACK_BASE_URL
+            value: "http://llamastack-with-userconfig-service.rh-analyze.svc.cluster.local:8321"
+          - name: LLAMASTACK_AGENT_ID
+            value: "ollama/llama3.2:1b"  # Update with your actual agent ID
+          - name: LLAMASTACK_API_KEY
+            value: "fake"
+          # S3/MinIO configuration
+          - name: MLFLOW_S3_ENDPOINT_URL
+            value: "http://mlflow-minio.rh-analyze.svc.cluster.local:9000"
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: mlflow-minio-secret
+                key: MINIO_ROOT_USER
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mlflow-minio-secret
+                key: MINIO_ROOT_PASSWORD
+          # Experiment and model configuration
+          - name: MLFLOW_EXPERIMENT
+            value: "llamastack-agent-wrapper-direct"
+          - name: MLFLOW_MODEL_NAME
+            value: "llamastack-agent-wrapper-direct"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: config
+        configMap:
+          name: mlflow-agent-logger-scripts
+      - name: workspace
+        emptyDir: {}
+

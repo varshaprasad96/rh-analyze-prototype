@@ -30,15 +30,24 @@ spec:
                 secretKeyRef:
                   name: mlflow-minio-secret
                   key: MINIO_ROOT_PASSWORD
+            # Fix for "Invalid Host header" error - allow all hosts
+            - name: FLASK_ALLOWED_HOSTS
+              value: "*"
+            - name: WERKZEUG_SKIP_HOST_CHECK
+              value: "1"
           command: ["/bin/sh", "-c"]
           args:
             - |
               mkdir -p /tmp/packages && \
               pip install --target /tmp/packages --no-cache-dir psycopg2-binary boto3 && \
               export PYTHONPATH=/tmp/packages:$PYTHONPATH && \
+              export WERKZEUG_SKIP_HOST_CHECK=1 && \
+              export FLASK_ALLOWED_HOSTS="*" && \
+              export WERKZEUG_RUN_MAIN=true && \
               mlflow server \
                 --host 0.0.0.0 \
                 --port 5000 \
+                --allowed-hosts '*' \
                 --backend-store-uri postgresql://mlflow:mlflowpass@mlflow-postgres:5432/mlflow \
                 --default-artifact-root s3://mlflow/
           readinessProbe:

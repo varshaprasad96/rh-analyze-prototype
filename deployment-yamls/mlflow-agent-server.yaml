@@ -1,0 +1,103 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-agent-server
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-agent-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-agent-server
+  template:
+    metadata:
+      labels:
+        app: mlflow-agent-server
+    spec:
+      containers:
+        - name: mlflow-agent-server
+          image: ghcr.io/mlflow/mlflow:latest
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            # MLflow tracking server connection (using existing MLflow service)
+            # Use full FQDN: <service-name>.<namespace>.svc.cluster.local
+            # Since both services are in the same namespace, this ensures proper DNS resolution
+            - name: MLFLOW_TRACKING_URI
+              value: "http://mlflow.NAMESPACE_PLACEHOLDER.svc.cluster.local:5000"
+            # Llamastack connection (will be used by the agent)
+            - name: LLAMASTACK_BASE_URL
+              value: "http://llamastack-with-userconfig-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321"
+            - name: LLAMASTACK_AGENT_ID
+              value: "default-agent"  # Update with your agent ID
+            - name: LLAMASTACK_API_KEY
+              value: "fake"
+            # S3/MinIO configuration for model artifacts (using existing MinIO)
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: "http://mlflow-minio.NAMESPACE_PLACEHOLDER.svc.cluster.local:9000"
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_PASSWORD
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              # Install dependencies to /tmp/packages
+              mkdir -p /tmp/packages && \
+              pip install --target /tmp/packages --no-cache-dir "openai" "pydantic>=2.0.0" "boto3" && \
+              export PYTHONPATH=/tmp/packages:$PYTHONPATH && \
+              # Start MLflow model server
+              # MLflow will automatically download from S3 using the configured credentials
+              # Using S3 URI directly bypasses the tracking server API (avoids DNS rebinding issue)
+              # Format: s3://<bucket>/<experiment-id>/<run-id>/artifacts/<artifact-path>/
+              mlflow models serve \
+                --host 0.0.0.0 \
+                --port 8080 \
+                --no-conda \
+                -m s3://mlflow/3/b74379d184ed4b71a980a3c577ee9ebd/artifacts/agent
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 5
+          resources:
+            requests:
+              cpu: 500m
+              memory: 1Gi
+            limits:
+              cpu: 2
+              memory: 2Gi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-agent-server
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-agent-server
+spec:
+  selector:
+    app: mlflow-agent-server
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+

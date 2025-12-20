@@ -1,0 +1,77 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: mlflow-log-agent-direct
+  namespace: rh-analyze
+spec:
+  ttlSecondsAfterFinished: 300  # Clean up after 5 minutes
+  template:
+    metadata:
+      labels:
+        app: mlflow-log-agent
+    spec:
+      restartPolicy: Never
+      containers:
+      - name: logger
+        # Use your built image instead of the base MLflow image
+        # Build with: docker build -t <registry>/mlflow-agent-logger:latest -f mlflow-client/Dockerfile .
+        # Or use a pre-built image
+        image: ghcr.io/mlflow/mlflow:latest  # Replace with your built image
+        command: ["/bin/sh", "-c"]
+        args:
+          - |
+            # Install required packages (if not already in image)
+            pip install --no-cache-dir openai pydantic>=2.0.0 boto3 -q
+            
+            # Copy agent files from mounted volume or use pre-installed ones
+            # If using Dockerfile approach, files are already in /workspace
+            if [ ! -f /workspace/llamastack_agent_wrapper_direct.py ]; then
+              echo "Copying agent files from ConfigMap..."
+              cp /config/llamastack_agent_wrapper_direct.py /workspace/ || true
+            fi
+            
+            # Run the logging script
+            python /workspace/log_llamastack_agent_direct.py || python /config/log_llamastack_agent_direct.py
+        env:
+          # MLflow tracking server connection
+          - name: MLFLOW_TRACKING_URI
+            value: "http://mlflow.rh-analyze.svc.cluster.local:5000"
+          # Llamastack connection
+          - name: LLAMASTACK_BASE_URL
+            value: "http://llamastack-with-userconfig-service.rh-analyze.svc.cluster.local:8321"
+          - name: LLAMASTACK_AGENT_ID
+            value: "ollama/llama3.2:1b"  # Update with your actual agent ID
+          - name: LLAMASTACK_API_KEY
+            value: "fake"
+          # S3/MinIO configuration
+          - name: MLFLOW_S3_ENDPOINT_URL
+            value: "http://mlflow-minio.rh-analyze.svc.cluster.local:9000"
+          - name: AWS_ACCESS_KEY_ID
+            valueFrom:
+              secretKeyRef:
+                name: mlflow-minio-secret
+                key: MINIO_ROOT_USER
+          - name: AWS_SECRET_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: mlflow-minio-secret
+                key: MINIO_ROOT_PASSWORD
+          # Experiment and model configuration
+          - name: MLFLOW_EXPERIMENT
+            value: "llamastack-agent-wrapper-direct"
+          - name: MLFLOW_MODEL_NAME
+            value: "llamastack-agent-wrapper-direct"
+        volumeMounts:
+        - name: config
+          mountPath: /config
+          optional: true  # Optional if using Dockerfile approach
+        - name: workspace
+          mountPath: /workspace
+      volumes:
+      - name: config
+        configMap:
+          name: mlflow-agent-logger-scripts
+          optional: true  # Optional if using Dockerfile approach
+      - name: workspace
+        emptyDir: {}
+
