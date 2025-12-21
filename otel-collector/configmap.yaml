@@ -1,0 +1,62 @@
+# OpenTelemetry Collector Configuration
+# Receives traces from kagent/applications via OTLP and exports to MLflow
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-collector-config
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: otel-collector
+data:
+  config.yaml: |
+    extensions:
+      health_check:
+        endpoint: 0.0.0.0:13133
+    
+    receivers:
+      otlp:
+        protocols:
+          grpc:
+            endpoint: 0.0.0.0:4317
+          http:
+            endpoint: 0.0.0.0:4318
+    
+    processors:
+      batch:
+        timeout: 1s
+        send_batch_size: 1024
+      
+      memory_limiter:
+        check_interval: 1s
+        limit_mib: 512
+        spike_limit_mib: 128
+    
+    exporters:
+      # Export to MLflow tracking server (using existing MLflow in rh-analyze namespace)
+      otlphttp:
+        endpoint: http://mlflow.rh-analyze.svc.cluster.local:5000
+        tls:
+          insecure: true
+      
+      # Debug logging (optional - remove in production)
+      debug:
+        verbosity: detailed
+    
+    service:
+      extensions: [health_check]
+      pipelines:
+        traces:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [otlphttp, debug]
+        
+        metrics:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+        
+        logs:
+          receivers: [otlp]
+          processors: [memory_limiter, batch]
+          exporters: [debug]
+

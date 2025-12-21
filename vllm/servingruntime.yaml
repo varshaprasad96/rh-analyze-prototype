@@ -23,6 +23,8 @@ spec:
     - --port=8080
     - --model=/mnt/models
     - --served-model-name={{.Name}}
+    # OpenTelemetry tracing - sends traces to OTEL Collector
+    - --otlp-traces-endpoint=http://otel-collector.NAMESPACE_PLACEHOLDER.svc.cluster.local:4317
     command:
     - python3
     - -m
@@ -34,6 +36,11 @@ spec:
       value: /tmp
     - name: VLLM_USAGE_SOURCE
       value: production-docker-image
+    # OpenTelemetry configuration
+    - name: OTEL_SERVICE_NAME
+      value: "vllm-qwen3"
+    - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
+      value: "true"
     image: vllm/vllm-openai:latest
     name: kserve-container
     ports:

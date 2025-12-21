@@ -1,2 +1,6 @@
 fastmcp
 httpx
+# OpenTelemetry for distributed tracing (optional - graceful fallback if not available)
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
