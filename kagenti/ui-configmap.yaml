@@ -1,0 +1,42 @@
+# Kagenti UI Configuration
+# ConfigMaps for dashboard URLs and namespace settings
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagenti-ui-config
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagenti-ui
+data:
+  # MLflow tracking UI (for traces)
+  TRACES_DASHBOARD_URL: "http://mlflow.rh-analyze.svc.cluster.local:5000"
+  
+  # Network traffic dashboard (Kiali if installed)
+  NETWORK_TRAFFIC_DASHBOARD_URL: ""
+  
+  # MCP Inspector URL (if installed)
+  MCP_INSPECTOR_URL: ""
+  
+  # MCP Proxy address (if using MCP Gateway)
+  MCP_PROXY_FULL_ADDRESS: ""
+  
+  # Keycloak console (if auth enabled)
+  KEYCLOAK_CONSOLE_URL: ""
+
+---
+# Environments ConfigMap
+# The kagenti-ui looks for this ConfigMap in the current namespace
+# to determine which namespaces to discover agents from.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: environments
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagenti-ui
+data:
+  # Comma-separated list of namespaces to search for agents
+  namespaces: "NAMESPACE_PLACEHOLDER,kagent,default"
+  # Default namespace for agent operations
+  default_namespace: "NAMESPACE_PLACEHOLDER"
+

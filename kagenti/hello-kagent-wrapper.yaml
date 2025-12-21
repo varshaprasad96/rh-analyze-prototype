@@ -1,0 +1,101 @@
+# Kagenti Wrapper for kagent.dev Agent
+#
+# This creates an agent.kagenti.dev resource that wraps an existing
+# kagent.dev agent, allowing it to be discovered and managed by kagenti-ui.
+#
+# The wrapper:
+# - Sets replicas: 0 to NOT deploy new pods (uses existing kagent pods)
+# - Specifies port 8000 -> 8080 mapping for kagenti compatibility
+# - Uses labels that the AgentCardSync controller looks for
+#
+# After applying, you need to patch the created service to use the existing
+# kagent pod selector. See the commands at the bottom.
+
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: Agent
+metadata:
+  name: hello-kagent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    # Required for kagenti-ui discovery
+    kagenti.io/type: agent
+    # Required for AgentCard sync
+    kagenti.io/agent-protocol: a2a
+    # Metadata about the underlying framework
+    kagenti.io/framework: kagent
+    # Standard Kubernetes label
+    app.kubernetes.io/name: hello-kagent
+    # General kagenti enablement
+    kagenti-enabled: "true"
+spec:
+  # IMPORTANT: Set to 0 to NOT create new pods
+  # We want to use the existing kagent.dev managed deployment
+  replicas: 0
+  
+  # Image source (required by schema but not used when replicas: 0)
+  imageSource:
+    image: "cr.kagent.dev/kagent-dev/kagent/app:0.7.7"
+  
+  # Service ports - map kagenti's expected 8000 to kagent's 8080
+  servicePorts:
+    - port: 8000         # kagenti-ui expects this
+      targetPort: 8080   # kagent runs on this
+      protocol: TCP
+      name: http
+  
+  # Pod template (required by schema)
+  podTemplateSpec:
+    spec:
+      containers:
+        - name: agent
+          image: "cr.kagent.dev/kagent-dev/kagent/app:0.7.7"
+          ports:
+            - containerPort: 8080
+          env:
+            - name: PORT
+              value: "8080"
+
+---
+# Service Alias for Port Mapping
+#
+# This service maps port 8000 (kagenti default) to port 8080 (kagent default)
+# and selects the kagent.dev managed pods.
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-kagent-kagenti
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent
+    kagent: hello-kagent
+    kagenti.io/type: agent
+spec:
+  selector:
+    # Select the kagent.dev managed pods
+    app: kagent
+    kagent: hello-kagent
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000         # kagenti-ui expects this
+      targetPort: 8080   # kagent runs on this
+
+# ---
+# POST-DEPLOYMENT COMMANDS:
+#
+# After applying this file, run the following commands to:
+# 1. Ensure the namespace is labeled for kagenti discovery
+# 2. Patch any kagenti-operator created services to use kagent pods
+#
+# # Label namespace
+# oc label namespace mschimun kagenti-enabled=true
+#
+# # If kagenti-operator created a hello-kagent-svc, patch it:
+# oc patch svc hello-kagent-svc -n mschimun --type='json' -p='[
+#   {"op": "replace", "path": "/spec/selector", "value": {"app": "kagent", "kagent": "hello-kagent"}}
+# ]'
+#
+# # Verify AgentCard is synced
+# oc get agentcards.agent.kagenti.dev -n mschimun
+

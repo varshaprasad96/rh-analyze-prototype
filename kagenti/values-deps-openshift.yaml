@@ -1,0 +1,77 @@
+# Kagenti Dependencies OpenShift Values Override
+# Use with: helm install -f values-deps-openshift.yaml kagenti-deps ...
+
+# Global settings
+openshift: true
+
+# Trust domain - will be overridden via --set spire.trustDomain=${DOMAIN}
+# domain: apps.your-cluster.example.com
+
+# ------------------------------------------------------------------
+#   Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  mcpInspector:
+    enabled: true
+  istio:
+    enabled: true
+  kiali:
+    enabled: true  
+  keycloak:
+    enabled: true
+  metricsServer:
+    enabled: false  # Usually already installed on OpenShift
+  otel:
+    enabled: true
+  containerRegistry:
+    enabled: false  # Use external registry (ghcr.io or quay.io)
+  spire:
+    enabled: true
+  tekton:
+    enabled: true
+  toolhiveCRDs:
+    enabled: true
+  toolhiveOperator:
+    enabled: true
+  certManager:
+    enabled: true  
+  gatewayApi:  
+    enabled: false  # Using OpenShift routes
+  ingressGateway:
+    enabled: false  # Using OpenShift routes
+  toolhive:
+    enabled: true
+
+# ------------------------------------------------------------------
+#  Istio Configuration for Ambient Mode
+# ------------------------------------------------------------------
+istio:
+  communityCharts:
+    enabled: false
+  namespace: "istio-system"
+  gatewayApiVersion: "v1.1.0"
+  cni:
+    profile: ambient
+    namespace: istio-cni
+  ztunnel:
+    namespace: istio-ztunnel  
+  base: {}
+  istiod: 
+    profile: ambient
+
+# ------------------------------------------------------------------
+#  SPIRE Configuration
+# ------------------------------------------------------------------
+spire:
+  namespace: zero-trust-workload-identity-manager
+  # trustDomain will be set via --set spire.trustDomain=${DOMAIN}
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  namespace: keycloak
+  auth:
+    adminUser: keycloakadmin
+    # adminPassword should be changed or set via secrets
+
