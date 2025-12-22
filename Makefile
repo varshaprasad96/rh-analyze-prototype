@@ -1,4 +1,4 @@
-.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-vectorstore deploy-agent build-agent build-vectorstore clean status
+.PHONY: login logout whoami projects console help deploy deploy-vllm deploy-llamastack deploy-vectorstore deploy-agent build-agent build-vectorstore deploy-mlflow deploy-otel-collector deploy-kagenti deploy-kagenti-ui deploy-kagenti-wrapper label-namespace-kagenti build-mlflow-a2a-agent deploy-mlflow-a2a-agent clean status
 
 # Load environment variables from .env.local
 include .env.local
@@ -27,6 +27,20 @@ help:
 	@echo "  make deploy-agent NAMESPACE=<name> - Deploy hello-agent"
 	@echo "  make status NAMESPACE=<name>       - Check deployment status"
 	@echo "  make clean NAMESPACE=<name>        - Remove deployments from namespace"
+	@echo ""
+	@echo "Observability:"
+	@echo "  make deploy-mlflow NAMESPACE=<name>        - Deploy MLflow tracking server"
+	@echo "  make deploy-otel-collector NAMESPACE=<name> - Deploy OTEL collector"
+	@echo ""
+	@echo "Orchestration:"
+	@echo "  make deploy-kagenti                              - Deploy kagenti platform (requires admin)"
+	@echo "  make deploy-kagenti-ui NAMESPACE=<name>          - Deploy kagenti-ui standalone (no auth)"
+	@echo "  make deploy-kagenti-wrapper NAMESPACE=<name>     - Deploy kagent→kagenti integration wrapper"
+	@echo "  make label-namespace-kagenti NAMESPACE=<name>    - Label namespace for kagenti discovery"
+	@echo ""
+	@echo "MLflow A2A Agent:"
+	@echo "  make build-mlflow-a2a-agent NAMESPACE=<name>     - Build MLflow A2A agent image"
+	@echo "  make deploy-mlflow-a2a-agent NAMESPACE=<name>    - Deploy MLflow A2A agent to kagenti"
 	@echo ""
 	@echo "Default namespace: $(NAMESPACE)"
 
@@ -215,6 +229,289 @@ status:
 	@echo "=== Services ==="
 	@oc get svc -n $(NAMESPACE) | grep -E "(qwen3-14b-awq|llama-stack|hello-agent)" || echo "  No services found"
 
+log-mlflow-agent:
+	@echo ""
+	@echo "Logging MLflow agent to tracking server in namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Checking prerequisites..."
+	@$(eval VECTOR_STORE_ID := $(shell oc get configmap vectorstore-config -n $(NAMESPACE) -o jsonpath='{.data.VECTOR_STORE_ID}' 2>/dev/null))
+	@if [ -z "$(VECTOR_STORE_ID)" ]; then \
+		echo "  ✗ Vector store not found. Run 'make deploy-vectorstore NAMESPACE=$(NAMESPACE)' first."; \
+		exit 1; \
+	fi
+	@echo "  ✓ Vector store found: $(VECTOR_STORE_ID)"
+	@echo ""
+	@echo "→ Setting up Python environment..."
+	@cd mlflow-agent-helloworld && \
+		python3 -m venv .venv 2>/dev/null || true && \
+		. .venv/bin/activate && \
+		pip install -q -r requirements.txt && \
+		echo "  ✓ Dependencies installed"
+	@echo ""
+	@echo "→ Logging agent to MLflow..."
+	@cd mlflow-agent-helloworld && \
+		. .venv/bin/activate && \
+		VECTOR_STORE_ID="$(VECTOR_STORE_ID)" \
+		MLFLOW_TRACKING_URI="http://mlflow.$(NAMESPACE).svc.cluster.local:5000" \
+		LLAMASTACK_BASE_URL="http://llama-stack-service.$(NAMESPACE).svc.cluster.local:8321" \
+		python log_agent.py
+	@echo ""
+	@echo "  ✓ Agent logged to MLflow"
+
+deploy-mlflow-agent:
+	@echo ""
+	@echo "Deploying MLflow agent helloworld to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Deploying service..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-agent-helloworld/service.yaml | oc apply -f -
+	@echo "  ✓ Service deployed"
+	@echo ""
+	@echo "→ Deploying agent server..."
+	@echo "  Note: Update MODEL_URI_PLACEHOLDER in deployment.yaml with actual model URI from MLflow"
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-agent-helloworld/deployment.yaml | oc apply -f -
+	@echo "  ✓ Deployment created"
+	@echo ""
+	@echo "✓ MLflow agent deployed!"
+	@echo ""
+	@echo "Test with:"
+	@echo "  oc port-forward -n $(NAMESPACE) svc/mlflow-agent-helloworld 8080:8080"
+	@echo "  curl -X POST http://localhost:8080/invocations -H 'Content-Type: application/json' -d '{\"input\": [{\"role\": \"user\", \"content\": \"What is kagent?\"}]}'"
+
+deploy-mlflow:
+	@echo ""
+	@echo "Deploying MLflow stack to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Creating secrets..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-server/secrets.yaml | oc apply -f -
+	@echo "  ✓ Secrets created"
+	@echo ""
+	@echo "→ Creating persistent volume claims..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-server/pvc.yaml | oc apply -f -
+	@echo "  ✓ PVCs created"
+	@echo ""
+	@echo "→ Deploying PostgreSQL..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-server/postgres.yaml | oc apply -f -
+	@echo "  ✓ PostgreSQL deployed"
+	@echo ""
+	@echo "→ Waiting for PostgreSQL to be ready..."
+	@timeout 120 bash -c 'until oc get pods -n $(NAMESPACE) -l app=mlflow-postgres -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for PostgreSQL..."; sleep 5; done' || \
+		echo "  ⚠ PostgreSQL not ready yet, continuing..."
+	@echo ""
+	@echo "→ Deploying MinIO..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-server/minio.yaml | oc apply -f -
+	@echo "  ✓ MinIO deployed"
+	@echo ""
+	@echo "→ Waiting for MinIO to be ready..."
+	@timeout 120 bash -c 'until oc get pods -n $(NAMESPACE) -l app=mlflow-minio -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for MinIO..."; sleep 5; done' || \
+		echo "  ⚠ MinIO not ready yet, continuing..."
+	@echo ""
+	@echo "→ Deploying MLflow tracking server..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-server/mlflow.yaml | oc apply -f -
+	@echo "  ✓ MLflow deployed"
+	@echo ""
+	@echo "→ Waiting for MLflow to be ready..."
+	@timeout 180 bash -c 'until oc get pods -n $(NAMESPACE) -l app=mlflow -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for MLflow..."; sleep 5; done' || \
+		echo "  ⚠ MLflow not ready yet. Check: oc logs -n $(NAMESPACE) -l app=mlflow"
+	@echo ""
+	@echo "✓ MLflow stack deployed!"
+	@echo ""
+	@echo "Services:"
+	@echo "  - MLflow Tracking: http://mlflow.$(NAMESPACE).svc.cluster.local:5000"
+	@echo "  - MinIO API:       http://mlflow-minio.$(NAMESPACE).svc.cluster.local:9000"
+	@echo "  - PostgreSQL:      mlflow-postgres.$(NAMESPACE).svc.cluster.local:5432"
+	@echo ""
+	@echo "Access MLflow UI:"
+	@echo "  oc port-forward -n $(NAMESPACE) svc/mlflow 5000:5000"
+	@echo "  open http://localhost:5000"
+
+deploy-otel-collector:
+	@echo ""
+	@echo "Deploying OTEL Collector to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Creating ConfigMap..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" otel-collector/configmap.yaml | oc apply -f -
+	@echo "  ✓ ConfigMap created"
+	@echo ""
+	@echo "→ Deploying OTEL Collector..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" otel-collector/deployment.yaml | oc apply -f -
+	@echo "  ✓ Deployment created"
+	@echo ""
+	@echo "→ Creating Service..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" otel-collector/service.yaml | oc apply -f -
+	@echo "  ✓ Service created"
+	@echo ""
+	@echo "→ Waiting for OTEL Collector to be ready..."
+	@timeout 60 bash -c 'until oc get pods -n $(NAMESPACE) -l app=otel-collector -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for OTEL Collector..."; sleep 5; done' || \
+		echo "  ⚠ OTEL Collector not ready yet. Check: oc logs -n $(NAMESPACE) -l app=otel-collector"
+	@echo ""
+	@echo "✓ OTEL Collector deployed!"
+	@echo ""
+	@echo "Endpoints:"
+	@echo "  - OTLP gRPC: otel-collector.$(NAMESPACE).svc.cluster.local:4317"
+	@echo "  - OTLP HTTP: otel-collector.$(NAMESPACE).svc.cluster.local:4318"
+	@echo ""
+	@echo "Configure kagent to send traces:"
+	@echo "  OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector.$(NAMESPACE).svc.cluster.local:4317"
+
+deploy-kagenti:
+	@echo ""
+	@echo "Deploying kagenti platform..."
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  - Admin access to the cluster"
+	@echo "  - Cert Manager uninstalled (kagenti installs its own)"
+	@echo "  - OVN configured for Istio Ambient mode"
+	@echo ""
+	@if [ ! -f kagenti/secrets.yaml ]; then \
+		echo "✗ Missing secrets.yaml!"; \
+		echo "  Copy kagenti/secrets.yaml.template to kagenti/secrets.yaml"; \
+		echo "  and fill in your credentials."; \
+		exit 1; \
+	fi
+	@echo "→ Running kagenti installer..."
+	@cd kagenti && ./install.sh
+	@echo ""
+	@echo "✓ Kagenti deployment initiated!"
+	@echo ""
+	@echo "Access the UI:"
+	@echo "  https://$$(kubectl get route kagenti-ui -n kagenti-system -o jsonpath='{.status.ingress[0].host}' 2>/dev/null || echo 'kagenti-ui.<cluster-domain>')"
+	@echo "  Credentials: admin / admin"
+
+deploy-kagenti-skip-deps:
+	@echo "Deploying kagenti (skipping dependencies)..."
+	@cd kagenti && ./install.sh --skip-deps
+
+label-namespace-kagenti:
+	@echo ""
+	@echo "Labeling namespace '$(NAMESPACE)' for kagenti discovery..."
+	@oc label namespace $(NAMESPACE) kagenti-enabled=true --overwrite
+	@echo "✓ Namespace labeled"
+	@echo ""
+	@echo "Namespaces with kagenti-enabled=true:"
+	@oc get namespaces -l kagenti-enabled=true -o custom-columns=NAME:.metadata.name
+
+deploy-kagenti-wrapper:
+	@echo ""
+	@echo "Deploying kagent→kagenti integration wrapper to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "Prerequisites:"
+	@echo "  - kagent hello-kagent must be deployed in $(NAMESPACE)"
+	@echo "  - Namespace must be labeled: kagenti-enabled=true"
+	@echo ""
+	@echo "→ Labeling namespace..."
+	@oc label namespace $(NAMESPACE) kagenti-enabled=true --overwrite
+	@echo "  ✓ Namespace labeled"
+	@echo ""
+	@echo "→ Deploying wrapper resources..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" kagenti/hello-kagent-wrapper.yaml | oc apply -f -
+	@echo "  ✓ Wrapper deployed"
+	@echo ""
+	@echo "→ Patching service selector to use existing kagent pods..."
+	@sleep 3
+	@oc patch svc hello-kagent-kagenti -n $(NAMESPACE) --type='json' -p='[{"op": "replace", "path": "/spec/selector", "value": {"app": "kagent", "kagent": "hello-kagent"}}]' 2>/dev/null || true
+	@echo "  ✓ Service patched"
+	@echo ""
+	@echo "→ Checking AgentCard..."
+	@sleep 5
+	@oc get agentcards.agent.kagenti.dev -n $(NAMESPACE) 2>/dev/null || echo "  No AgentCards found (kagenti-operator may not be installed)"
+	@echo ""
+	@echo "✓ Wrapper deployed!"
+	@echo ""
+	@echo "The hello-kagent agent should now be discoverable in kagenti-ui"
+	@echo "URL: https://$$(oc get route kagenti-ui -n $(NAMESPACE) -o jsonpath='{.status.ingress[0].host}' 2>/dev/null || echo 'kagenti-ui.<cluster>')"
+
+deploy-kagenti-ui:
+	@echo ""
+	@echo "Deploying kagenti-ui to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Creating ConfigMap..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" kagenti/ui-configmap.yaml | oc apply -f -
+	@echo "  ✓ ConfigMap created"
+	@echo ""
+	@echo "→ Deploying kagenti-ui..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" kagenti/ui-deployment.yaml | oc apply -f -
+	@echo "  ✓ Deployment created"
+	@echo ""
+	@echo "→ Creating Route..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" kagenti/ui-route.yaml | oc apply -f -
+	@echo "  ✓ Route created"
+	@echo ""
+	@echo "→ Waiting for kagenti-ui to be ready..."
+	@timeout 120 bash -c 'until oc get pods -n $(NAMESPACE) -l app=kagenti-ui -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for kagenti-ui..."; sleep 5; done' || \
+		echo "  ⚠ kagenti-ui not ready yet. Check: oc logs -n $(NAMESPACE) -l app=kagenti-ui"
+	@echo ""
+	@echo "✓ kagenti-ui deployed!"
+	@echo ""
+	@echo "Access the UI:"
+	@echo "  URL: https://$$(oc get route kagenti-ui -n $(NAMESPACE) -o jsonpath='{.status.ingress[0].host}' 2>/dev/null || echo 'kagenti-ui.<cluster-domain>')"
+	@echo ""
+	@echo "Or via port-forward:"
+	@echo "  oc port-forward -n $(NAMESPACE) svc/kagenti-ui 8501:8501"
+	@echo "  open http://localhost:8501"
+	@echo ""
+	@echo "Note: Authentication is disabled in standalone mode."
+
+build-mlflow-a2a-agent:
+	@echo ""
+	@echo "Building MLflow A2A Agent image in namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Checking if namespace exists..."
+	@oc get namespace $(NAMESPACE) >/dev/null 2>&1 || \
+		(echo "  Namespace does not exist. Creating..." && \
+		 oc create namespace $(NAMESPACE) && \
+		 echo "  ✓ Namespace created")
+	@echo ""
+	@echo "→ Creating BuildConfig and ImageStream..."
+	@sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-a2a-agent/buildconfig.yaml | oc apply -f -
+	@echo "  ✓ BuildConfig created"
+	@echo ""
+	@echo "→ Starting image build..."
+	@cd mlflow-a2a-agent && oc start-build mlflow-a2a-agent -n $(NAMESPACE) --from-dir=. --follow
+	@echo ""
+	@echo "✓ MLflow A2A Agent image built successfully!"
+	@echo ""
+	@echo "Image: image-registry.openshift-image-registry.svc:5000/$(NAMESPACE)/mlflow-a2a-agent:latest"
+
+deploy-mlflow-a2a-agent:
+	@echo ""
+	@echo "Deploying MLflow A2A Agent to namespace: $(NAMESPACE)"
+	@echo ""
+	@echo "→ Checking if image exists..."
+	@oc get imagestream mlflow-a2a-agent -n $(NAMESPACE) >/dev/null 2>&1 || \
+		(echo "  Image not found. Building..." && $(MAKE) build-mlflow-a2a-agent NAMESPACE=$(NAMESPACE))
+	@echo ""
+	@echo "→ Labeling namespace for kagenti discovery..."
+	@oc label namespace $(NAMESPACE) kagenti-enabled=true --overwrite
+	@echo "  ✓ Namespace labeled"
+	@echo ""
+	@echo "→ Creating MCP tokens secret (if not exists)..."
+	@oc get secret mcp-tokens -n $(NAMESPACE) >/dev/null 2>&1 || \
+		(sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-a2a-agent/secret.yaml | oc apply -f - && \
+		 echo "  ⚠ Created secret with placeholder tokens. Update with real values!")
+	@echo ""
+	@echo "→ Deploying MLflow A2A Agent..."
+	@AGENT_IMAGE=$$(oc get imagestream mlflow-a2a-agent -n $(NAMESPACE) -o jsonpath='{.status.tags[0].items[0].dockerImageReference}'); \
+	sed "s/NAMESPACE_PLACEHOLDER/$(NAMESPACE)/g" mlflow-a2a-agent/deployment.yaml | \
+	sed "s|image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/mlflow-a2a-agent:latest|$$AGENT_IMAGE|g" | \
+	oc apply -f -
+	@echo "  ✓ Agent deployed"
+	@echo ""
+	@echo "→ Waiting for agent to be ready..."
+	@timeout 180 bash -c 'until oc get pods -n $(NAMESPACE) -l app.kubernetes.io/name=mlflow-a2a-agent -o jsonpath="{.items[0].status.phase}" 2>/dev/null | grep -q "Running"; do echo "  Waiting for agent pod..."; sleep 5; done' || \
+		echo "  ⚠ Agent not ready yet. Check: oc logs -n $(NAMESPACE) -l app.kubernetes.io/name=mlflow-a2a-agent"
+	@echo ""
+	@echo "✓ MLflow A2A Agent deployed!"
+	@echo ""
+	@echo "The agent should now be discoverable in kagenti-ui."
+	@echo ""
+	@echo "Test A2A discovery:"
+	@echo "  oc port-forward -n $(NAMESPACE) svc/mlflow-a2a-agent 8080:8080"
+	@echo "  curl http://localhost:8080/.well-known/agent.json"
+	@echo ""
+	@echo "Test JSON-RPC:"
+	@echo "  curl -X POST http://localhost:8080/ -H 'Content-Type: application/json' \\"
+	@echo "    -d '{\"jsonrpc\":\"2.0\",\"method\":\"tasks/send\",\"params\":{\"message\":{\"role\":\"user\",\"parts\":[{\"type\":\"text\",\"text\":\"Hello!\"}]}},\"id\":1}'"
+
 clean:
 	@echo "Removing deployments from namespace: $(NAMESPACE)"
 	@echo ""
@@ -223,6 +520,10 @@ clean:
 	@oc delete service hello-cagent -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
 	@oc delete buildconfig hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  BuildConfig not found"
 	@oc delete imagestream hello-agent -n $(NAMESPACE) 2>/dev/null || echo "  ImageStream not found"
+	@echo ""
+	@echo "→ Removing MLflow Agent..."
+	@oc delete deployment mlflow-agent-helloworld -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
+	@oc delete service mlflow-agent-helloworld -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
 	@echo ""
 	@echo "→ Removing kagent Agent..."
 	@oc delete agent hello-kagent -n $(NAMESPACE) 2>/dev/null || echo "  Agent CRD not found"
@@ -240,6 +541,45 @@ clean:
 	@echo ""
 	@echo "→ Removing vLLM model..."
 	@oc delete inferenceservice qwen3-14b-awq -n $(NAMESPACE) 2>/dev/null || echo "  InferenceService not found"
+	@echo ""
+	@echo "→ Removing OTEL Collector..."
+	@oc delete deployment otel-collector -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
+	@oc delete service otel-collector -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
+	@oc delete configmap otel-collector-config -n $(NAMESPACE) 2>/dev/null || echo "  ConfigMap not found"
+	@echo ""
+	@echo "→ Removing kagenti-ui..."
+	@oc delete route kagenti-ui -n $(NAMESPACE) 2>/dev/null || echo "  Route not found"
+	@oc delete deployment kagenti-ui -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
+	@oc delete service kagenti-ui -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
+	@oc delete configmap kagenti-ui-config -n $(NAMESPACE) 2>/dev/null || echo "  ConfigMap not found"
+	@oc delete configmap environments -n $(NAMESPACE) 2>/dev/null || echo "  Environments ConfigMap not found"
+	@oc delete serviceaccount kagenti-ui-service-account -n $(NAMESPACE) 2>/dev/null || echo "  ServiceAccount not found"
+	@oc delete clusterrolebinding kagenti-ui-binding 2>/dev/null || echo "  ClusterRoleBinding not found"
+	@oc delete clusterrole kagenti-ui-role 2>/dev/null || echo "  ClusterRole not found"
+	@echo ""
+	@echo "→ Removing kagenti wrapper..."
+	@oc delete agents.agent.kagenti.dev hello-kagent -n $(NAMESPACE) 2>/dev/null || echo "  Agent wrapper not found"
+	@oc delete service hello-kagent-kagenti -n $(NAMESPACE) 2>/dev/null || echo "  Service alias not found"
+	@echo ""
+	@echo "→ Removing MLflow stack..."
+	@oc delete deployment mlflow -n $(NAMESPACE) 2>/dev/null || echo "  MLflow deployment not found"
+	@oc delete deployment mlflow-minio -n $(NAMESPACE) 2>/dev/null || echo "  MinIO deployment not found"
+	@oc delete deployment mlflow-postgres -n $(NAMESPACE) 2>/dev/null || echo "  PostgreSQL deployment not found"
+	@oc delete service mlflow -n $(NAMESPACE) 2>/dev/null || echo "  MLflow service not found"
+	@oc delete service mlflow-minio -n $(NAMESPACE) 2>/dev/null || echo "  MinIO service not found"
+	@oc delete service mlflow-postgres -n $(NAMESPACE) 2>/dev/null || echo "  PostgreSQL service not found"
+	@oc delete pvc mlflow-minio-pvc -n $(NAMESPACE) 2>/dev/null || echo "  MinIO PVC not found"
+	@oc delete pvc mlflow-postgres-pvc -n $(NAMESPACE) 2>/dev/null || echo "  PostgreSQL PVC not found"
+	@oc delete secret mlflow-minio-secret -n $(NAMESPACE) 2>/dev/null || echo "  MinIO secret not found"
+	@oc delete secret mlflow-postgres-secret -n $(NAMESPACE) 2>/dev/null || echo "  PostgreSQL secret not found"
+	@echo ""
+	@echo "→ Removing MLflow A2A Agent..."
+	@oc delete agents.agent.kagenti.dev mlflow-a2a-agent -n $(NAMESPACE) 2>/dev/null || echo "  Agent CR not found"
+	@oc delete deployment mlflow-a2a-agent -n $(NAMESPACE) 2>/dev/null || echo "  Deployment not found"
+	@oc delete service mlflow-a2a-agent -n $(NAMESPACE) 2>/dev/null || echo "  Service not found"
+	@oc delete buildconfig mlflow-a2a-agent -n $(NAMESPACE) 2>/dev/null || echo "  BuildConfig not found"
+	@oc delete imagestream mlflow-a2a-agent -n $(NAMESPACE) 2>/dev/null || echo "  ImageStream not found"
+	@oc delete secret mcp-tokens -n $(NAMESPACE) 2>/dev/null || echo "  MCP tokens secret not found"
 	@echo ""
 	@echo "✓ Cleanup complete"
 	@echo ""

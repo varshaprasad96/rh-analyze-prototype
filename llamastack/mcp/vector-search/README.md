@@ -387,13 +387,63 @@ kagent has a `Memory` CRD for RAG, but:
 
 This MCP approach works **today** with any MCP-compatible framework.
 
+## Telemetry (OpenTelemetry)
+
+The Vector Search MCP server supports OpenTelemetry for distributed tracing. When enabled, it creates spans for:
+
+- **`search_knowledge_base`** - The entire tool invocation with query, result count, and timing
+- **`search_vector_store`** - Individual vector store searches (one per store)
+- **HTTP calls** - Auto-instrumented outgoing HTTP requests to Llama Stack
+
+### Configuration
+
+Add these to your ConfigMap to enable OTEL:
+
+```yaml
+data:
+  # ... existing config ...
+  OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.mschimun.svc.cluster.local:4317"
+  OTEL_SERVICE_NAME: "vector-search-mcp"
+```
+
+### Span Attributes
+
+Each trace includes rich metadata:
+
+| Attribute | Description |
+|-----------|-------------|
+| `query` | The search query text |
+| `vector_store_count` | Number of stores searched |
+| `vector_store_id` | Specific store ID (per-store span) |
+| `result_count` | Results from each store |
+| `total_results` | Combined results |
+| `returned_results` | Final results after truncation |
+| `error` | Error message if failed |
+
+### End-to-End Tracing
+
+With OTEL enabled across the stack:
+
+```
+kagent → MCP Tool Call → Vector Search MCP → Llama Stack → vLLM
+   │                           │                    │         │
+   └── traces ─────────────────┴────────────────────┴─────────┘
+                               │
+                        OTEL Collector → MLflow
+```
+
+### Disabling OTEL
+
+Leave `OTEL_EXPORTER_OTLP_ENDPOINT` empty or remove it from the ConfigMap.
+
 ## Future Improvements
 
+- [x] **Observability** - OpenTelemetry tracing for queries and latency
 - [ ] **Streaming responses** - Stream chunks as they're found
 - [ ] **Better metadata** - Include source URLs, timestamps, relevance scores
 - [ ] **Query caching** - Cache frequent queries for faster responses
 - [ ] **Multi-tenant auth** - Support per-agent Llama Stack tokens
-- [ ] **Observability** - Export metrics (queries/sec, latency, cache hits)
+- [ ] **Metrics** - Export Prometheus metrics (queries/sec, latency histograms)
 - [ ] **kagent Memory Provider** - Contribute Llama Stack provider to kagent
 
 ## Related Documentation

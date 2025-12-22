@@ -1,3 +1,15 @@
+# Kagent Hello World Agent
+# 
+# This agent uses kagent.dev CRD and is managed by the kagent controller.
+# It can optionally be integrated with kagenti-ui using the wrapper pattern.
+#
+# Labels:
+#   app: kagent-helloworld       - Application identifier
+#   kagenti.io/type: agent       - Required for kagenti-ui discovery
+#
+# For full kagenti integration, also deploy:
+#   ../kagenti/hello-kagent-wrapper.yaml
+#
 apiVersion: kagent.dev/v1alpha2
 kind: Agent
 metadata:
@@ -5,12 +17,29 @@ metadata:
   namespace: NAMESPACE_PLACEHOLDER
   labels:
     app: kagent-helloworld
+    # Required for kagenti-ui to discover this agent
+    kagenti.io/type: agent
 spec:
   type: Declarative
   description: "Hello world agent using Llama Stack via kagent with GitHub MCP"
   declarative:
     modelConfig: llama-stack-model
     stream: true
+    # MLflow Tracing via OpenTelemetry
+    deployment:
+      env:
+        # Enable OTEL tracing
+        - name: OTEL_TRACING_ENABLED
+          value: "true"
+        # OTEL collector endpoint (gRPC)
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "http://otel-collector.NAMESPACE_PLACEHOLDER.svc.cluster.local:4317"
+        # Service name for traces
+        - name: OTEL_SERVICE_NAME
+          value: "hello-kagent"
+        # Optional: Enable OTEL logging
+        - name: OTEL_LOGGING_ENABLED
+          value: "false"
     systemMessage: |
       You are a helpful AI assistant powered by Llama Stack through kagent.
       

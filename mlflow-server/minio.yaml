@@ -1,0 +1,84 @@
+# MinIO Deployment and Service
+# S3-compatible object storage for MLflow artifacts
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mlflow-minio
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-minio
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mlflow-minio
+  template:
+    metadata:
+      labels:
+        app: mlflow-minio
+    spec:
+      containers:
+        - name: minio
+          image: quay.io/minio/minio:latest
+          args:
+            - server
+            - /data
+            - --console-address
+            - ":9001"
+          envFrom:
+            - secretRef:
+                name: mlflow-minio-secret
+          ports:
+            - containerPort: 9000
+              name: api
+              protocol: TCP
+            - containerPort: 9001
+              name: console
+              protocol: TCP
+          volumeMounts:
+            - name: data
+              mountPath: /data
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /minio/health/live
+              port: 9000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /minio/health/ready
+              port: 9000
+            initialDelaySeconds: 10
+            periodSeconds: 5
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: mlflow-minio-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mlflow-minio
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-minio
+spec:
+  selector:
+    app: mlflow-minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+    - name: console
+      port: 9001
+      targetPort: 9001
+  type: ClusterIP
+

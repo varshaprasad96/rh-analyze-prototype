@@ -1,0 +1,73 @@
+# Kagenti OpenShift Values Override
+# Use with: helm install -f values-openshift.yaml ...
+
+# Global settings
+openshift: true
+
+# ------------------------------------------------------------------
+#  Control Panel: Enable or disable components here
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: true
+  mcpGateway:
+    enabled: true
+  agentOperator:
+    enabled: true   
+  platformWebhook:
+    enabled: true    
+  ui:
+    enabled: true
+  istio:
+    enabled: true  
+
+# ------------------------------------------------------------------
+#  Agent Namespaces
+#  These namespaces will be created for deploying agents
+# ------------------------------------------------------------------
+agentNamespaces:
+  - mschimun   # Our main namespace
+  - team1
+  - team2
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  configmap: kagenti-ui-config
+  auth:
+    enabled: true
+  namespace: kagenti-system
+  image: ghcr.io/kagenti/kagenti/ui
+  # tag will be set automatically from LATEST_TAG
+
+# ------------------------------------------------------------------
+#  OAuth Secret Configuration for OpenShift
+#  OpenShift uses different CA handling than Kind
+# ------------------------------------------------------------------
+uiOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/ui-oauth-secret
+  tag: latest
+  # Set to false for OpenShift - serviceaccount CA doesn't validate routes
+  useServiceAccountCA: false
+
+agentOAuthSecret:
+  image: ghcr.io/kagenti/kagenti/agent-oauth-secret
+  tag: latest
+  # Set to false for OpenShift
+  useServiceAccountCA: false
+  # spiffePrefix will be set dynamically: spiffe://${DOMAIN}/sa
+  updateEnvConfigMaps: true
+  clientName: kagenti-keycloak-client
+
+# ------------------------------------------------------------------
+#  Keycloak Configuration
+# ------------------------------------------------------------------
+keycloak:
+  enabled: true
+  namespace: keycloak
+  adminSecretName: keycloak-initial-admin
+  adminUsernameKey: username
+  adminPasswordKey: password
+  # URLs will be set dynamically based on OpenShift routes
+

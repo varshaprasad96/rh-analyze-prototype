@@ -1,0 +1,203 @@
+# Kagenti UI Standalone Deployment
+# Deploys kagenti-ui without full kagenti stack (no auth)
+#
+# PREREQUISITES:
+# 1. Label namespaces for discovery:
+#    oc label namespace <ns> kagenti-enabled=true
+#
+# 2. Agents must have labels:
+#    kagenti.io/type: agent
+#    kagenti.io/agent-protocol: a2a
+#
+# 3. Create optional ConfigMap for dashboard URLs:
+#    oc apply -f ui-configmap.yaml
+#
+# KNOWN LIMITATIONS:
+# - UI expects agents on port 8000 (kagenti default)
+# - kagent.dev agents run on port 8080
+# - Use port alias service or agent.kagenti.dev wrapper for kagent integration
+#
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: kagenti-ui-service-account
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagenti-ui
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagenti-ui
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagenti-ui
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kagenti-ui
+  template:
+    metadata:
+      labels:
+        app: kagenti-ui
+    spec:
+      serviceAccountName: kagenti-ui-service-account
+      containers:
+        - name: kagenti-ui-container
+          image: ghcr.io/kagenti/kagenti/ui:v0.2.0-alpha.2
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: UV_CACHE_DIR
+              value: "/app/.cache/uv"
+            # Disable auth for standalone deployment
+            - name: ENABLE_AUTH
+              value: "false"
+            # Enable cluster-wide namespace discovery
+            - name: WATCH_ALL_NAMESPACES
+              value: "true"
+            # Comma-separated list of namespaces to search for agents
+            - name: AGENT_NAMESPACES
+              value: "NAMESPACE_PLACEHOLDER,kagent,default"
+            # Domain for service URLs
+            - name: DOMAIN_NAME
+              value: "NAMESPACE_PLACEHOLDER.svc.cluster.local"
+            # Namespace for agent discovery (fallback)
+            - name: NAMESPACE
+              value: "NAMESPACE_PLACEHOLDER"
+            - name: POD_NAMESPACE
+              value: "NAMESPACE_PLACEHOLDER"
+            - name: KAGENT_NAMESPACE
+              value: "NAMESPACE_PLACEHOLDER"
+            - name: DEFAULT_NAMESPACE
+              value: "NAMESPACE_PLACEHOLDER"
+            # Optional: Configure dashboard URLs
+            - name: TRACES_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kagenti-ui-config
+                  key: TRACES_DASHBOARD_URL
+                  optional: true
+            - name: NETWORK_TRAFFIC_DASHBOARD_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kagenti-ui-config
+                  key: NETWORK_TRAFFIC_DASHBOARD_URL
+                  optional: true
+            - name: MCP_INSPECTOR_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kagenti-ui-config
+                  key: MCP_INSPECTOR_URL
+                  optional: true
+            - name: MCP_PROXY_FULL_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: kagenti-ui-config
+                  key: MCP_PROXY_FULL_ADDRESS
+                  optional: true
+            - name: KEYCLOAK_CONSOLE_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: kagenti-ui-config
+                  key: KEYCLOAK_CONSOLE_URL
+                  optional: true
+          volumeMounts:
+            - name: cache
+              mountPath: /app/.cache
+            - name: streamlit
+              mountPath: /.streamlit
+          ports:
+            - containerPort: 8501
+          resources:
+            limits:
+              cpu: 500m
+              memory: 1Gi
+            requests:
+              cpu: 100m
+              memory: 256Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8501
+            initialDelaySeconds: 30
+            periodSeconds: 30
+      volumes:
+        - name: cache
+          emptyDir: {}
+        - name: streamlit
+          emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagenti-ui
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagenti-ui
+spec:
+  selector:
+    app: kagenti-ui
+  ports:
+    - protocol: TCP
+      port: 8501
+      targetPort: 8501
+  type: ClusterIP
+---
+# RBAC for kagenti-ui to manage agents and tools
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: kagenti-ui-role
+  labels:
+    app: kagenti-ui
+rules:
+  - apiGroups: [""]
+    resources: ["namespaces"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["configmaps"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["services"]
+    verbs: ["get", "list"]
+  # kagenti agent CRDs
+  - apiGroups: ["agent.kagenti.dev"]
+    resources: ["agents", "agentbuilds", "agentcards"]
+    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
+  # toolhive MCP server CRDs
+  - apiGroups: ["toolhive.stacklok.dev"]
+    resources: ["mcpservers"]
+    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
+  # kagent CRDs
+  - apiGroups: ["kagent.dev"]
+    resources: ["agents", "modelconfigs", "remotemcpservers", "toolservers", "memories"]
+    verbs: ["get", "list", "delete", "create", "update", "patch", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: kagenti-ui-binding
+  labels:
+    app: kagenti-ui
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: kagenti-ui-role
+subjects:
+  - kind: ServiceAccount
+    name: kagenti-ui-service-account
+    namespace: NAMESPACE_PLACEHOLDER
+

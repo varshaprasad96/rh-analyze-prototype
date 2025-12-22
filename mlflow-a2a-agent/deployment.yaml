@@ -1,0 +1,187 @@
+# MLflow A2A Agent - Kagenti Deployment
+# 
+# This file contains a complete kagenti Agent CR configuration
+# with all configurable environment variables.
+#
+# Usage:
+#   1. Update NAMESPACE_PLACEHOLDER with your namespace
+#   2. Update the image reference after building
+#   3. Configure the environment variables as needed
+#   4. Apply: kubectl apply -f deployment.yaml
+#
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: Agent
+metadata:
+  name: mlflow-a2a-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: mlflow
+    app.kubernetes.io/name: mlflow-a2a-agent
+    app.kubernetes.io/component: agent
+spec:
+  description: "AI assistant with RAG and GitHub access, powered by Llama Stack and MLflow"
+  replicas: 1
+  imageSource:
+    # Update this after building the image
+    image: "image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/mlflow-a2a-agent:latest"
+  servicePorts:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP
+  podTemplateSpec:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: mlflow
+        app.kubernetes.io/name: mlflow-a2a-agent
+    spec:
+      serviceAccountName: default
+      containers:
+        - name: agent
+          image: "image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/mlflow-a2a-agent:latest"
+          ports:
+            - containerPort: 8080
+              protocol: TCP
+          env:
+            # ============================================================
+            # Agent Identity (for A2A discovery)
+            # ============================================================
+            - name: AGENT_NAME
+              value: "Documentation Assistant"
+            - name: AGENT_DESCRIPTION
+              value: "AI assistant with RAG and GitHub access, powered by Llama Stack"
+            - name: AGENT_VERSION
+              value: "1.0.0"
+            
+            # Kubernetes-aware URL construction
+            - name: SERVICE_NAME
+              value: "mlflow-a2a-agent"
+            - name: NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            
+            # ============================================================
+            # Llama Stack Configuration
+            # ============================================================
+            - name: LLAMASTACK_URL
+              value: "http://llamastack-with-userconfig-service:8321"
+            - name: LLAMASTACK_MODEL
+              value: "meta-llama/Llama-3.2-3B-Instruct"
+            - name: SYSTEM_PROMPT
+              value: |
+                You are a helpful AI assistant with access to documentation
+                and GitHub repositories.
+                
+                When answering questions:
+                - Use the RAG tool to search the knowledge base for relevant documentation
+                - Use GitHub tools to get information about repositories
+                - Be accurate and cite sources when possible
+                - If you don't know something, say so
+            
+            # ============================================================
+            # RAG Configuration
+            # ============================================================
+            - name: RAG_ENABLED
+              value: "true"
+            - name: VECTOR_STORE_IDS
+              value: "docs-vectorstore"
+            
+            # ============================================================
+            # MCP Servers Configuration
+            # Generic JSON array supporting any number of MCP servers
+            # ============================================================
+            - name: MCP_SERVERS_JSON
+              value: |
+                [
+                  {
+                    "name": "github",
+                    "url": "http://github-mcp:8080/mcp",
+                    "transport": "streamable-http",
+                    "headers": {
+                      "Authorization": "Bearer ${GITHUB_TOKEN}"
+                    },
+                    "tools": [
+                      "get_file_contents",
+                      "search_code",
+                      "list_commits",
+                      "search_repositories"
+                    ]
+                  }
+                ]
+            
+            # ============================================================
+            # Secrets (injected from Kubernetes secrets)
+            # ============================================================
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-tokens
+                  key: github-token
+                  optional: true
+            
+            # ============================================================
+            # MLflow Tracking (optional)
+            # ============================================================
+            - name: MLFLOW_TRACKING_URI
+              value: ""
+            
+            # ============================================================
+            # A2A Skills Definition
+            # ============================================================
+            - name: SKILLS_JSON
+              value: |
+                [
+                  {
+                    "id": "answer",
+                    "name": "Answer Questions",
+                    "description": "Answer questions using RAG and available tools",
+                    "tags": ["qa", "rag", "documentation"]
+                  },
+                  {
+                    "id": "github",
+                    "name": "GitHub Operations",
+                    "description": "Search and retrieve information from GitHub repositories",
+                    "tags": ["github", "code", "repository"]
+                  }
+                ]
+            
+            # ============================================================
+            # Server Configuration
+            # ============================================================
+            - name: PORT
+              value: "8080"
+            - name: HOST
+              value: "0.0.0.0"
+          
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+

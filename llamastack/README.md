@@ -50,6 +50,38 @@ The ConfigMap contains the Llama Stack run.yaml which:
 - Enables agents, RAG, files, inference, and tool APIs
 - Sets up embedding model (granite-embedding-125m)
 
+## Telemetry (OpenTelemetry)
+
+Llama Stack has native OpenTelemetry support for distributed tracing. The deployment is configured to send traces to an OTEL Collector:
+
+| Environment Variable | Value | Description |
+|---------------------|-------|-------------|
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | `http://otel-collector.<namespace>.svc.cluster.local:4318` | OTEL Collector HTTP endpoint |
+| `OTEL_EXPORTER_OTLP_PROTOCOL` | `http/protobuf` | OTLP protocol (HTTP) |
+| `OTEL_SERVICE_NAME` | `llama-stack` | Service name in traces |
+
+### End-to-End Tracing Architecture
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        MLflow UI (Traces)                           │
+└───────────────────────────────▲─────────────────────────────────────┘
+                                │
+┌───────────────────────────────┴─────────────────────────────────────┐
+│                      OTEL Collector                                 │
+│               (receives OTLP from all sources)                      │
+└───────────────────────────────▲─────────────────────────────────────┘
+                                │
+        ┌───────────────────────┼───────────────────────┐
+        │                       │                       │
+┌───────┴───────┐     ┌─────────┴─────────┐   ┌────────┴────────┐
+│   kagent      │     │   Llama Stack     │   │ Vector Search   │
+│ (agent spans) │     │ (LLM spans)       │   │     MCP         │
+└───────────────┘     └───────────────────┘   └─────────────────┘
+```
+
+This provides complete visibility from user request → agent processing → LLM inference → tool calls.
+
 ## Notes
 
 - Requires vLLM model to be deployed and ready first

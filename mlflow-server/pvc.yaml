@@ -1,0 +1,31 @@
+# Persistent Volume Claims for MLflow
+# MinIO (artifact storage) and PostgreSQL (metadata storage)
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-minio-pvc
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-minio
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mlflow-postgres-pvc
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: mlflow-postgres
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+

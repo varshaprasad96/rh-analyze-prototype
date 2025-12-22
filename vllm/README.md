@@ -38,9 +38,39 @@ sed 's/NAMESPACE_PLACEHOLDER/my-namespace/g' inferenceservice.yaml | oc apply -f
 oc wait --for=condition=Ready inferenceservice/qwen3-14b-awq -n my-namespace --timeout=600s
 ```
 
+## Telemetry (OpenTelemetry)
+
+vLLM has native OpenTelemetry support for distributed tracing. The ServingRuntime is configured to send traces to an OTEL Collector:
+
+| Configuration | Value | Description |
+|--------------|-------|-------------|
+| `--otlp-traces-endpoint` | `http://otel-collector.<namespace>.svc.cluster.local:4317` | OTEL Collector gRPC endpoint |
+| `OTEL_SERVICE_NAME` | `vllm-qwen3` | Service name in traces |
+| `OTEL_EXPORTER_OTLP_TRACES_INSECURE` | `true` | Allow non-TLS connection |
+
+### What's Traced
+
+vLLM traces include:
+- Token generation latency
+- Batch processing time
+- Model inference duration
+- Request queue time
+
+### End-to-End Tracing
+
+With OTEL enabled on vLLM, Llama Stack, and kagent, you get complete visibility:
+
+```
+User Request → kagent → Llama Stack → vLLM (GPU inference) → Response
+     └── traces ──────────────────────────────────────────────────┘
+                              │
+                     OTEL Collector → MLflow
+```
+
 ## Notes
 
 - KServe automatically creates Deployment, Services, and HPA
 - Model serving requires GPU resources (1 GPU per replica)
 - Initial model load can take 5-10 minutes
 - The model is pulled from Hugging Face: `hf://Qwen/Qwen3-14B-AWQ`
+- **Important:** The OTEL endpoint in `servingruntime.yaml` uses `NAMESPACE_PLACEHOLDER` - ensure the OTEL Collector is deployed in the same namespace or update the endpoint accordingly

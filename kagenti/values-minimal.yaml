@@ -1,0 +1,68 @@
+# Kagenti Minimal Values - Without dependencies
+# Use with: helm install -f values-minimal.yaml ...
+
+# Global settings
+openshift: true
+
+# ------------------------------------------------------------------
+#  Control Panel: Minimal components
+# ------------------------------------------------------------------
+components:
+  agentNamespaces:
+    enabled: false  # Don't create agent namespaces, we already have mschimun
+  mcpGateway:
+    enabled: false  # Disable MCP gateway
+  agentOperator:
+    enabled: true   # Enable agent operator
+  platformWebhook:
+    enabled: true   # Enable platform webhook
+  ui:
+    enabled: true   # Enable UI
+  istio:
+    enabled: false  # Disable Istio (not installed)
+
+# ------------------------------------------------------------------
+#  UI Configuration
+# ------------------------------------------------------------------
+ui:
+  configmap: kagenti-ui-config
+  auth:
+    enabled: false  # Disable auth for simplicity
+  namespace: mschimun  # Use our namespace
+  image: ghcr.io/kagenti/kagenti/ui
+
+# ------------------------------------------------------------------
+#  Disable Keycloak (not installed)
+# ------------------------------------------------------------------
+keycloak:
+  enabled: false
+
+# ------------------------------------------------------------------
+#  Disable OAuth secrets (using no auth)
+# ------------------------------------------------------------------
+uiOAuthSecret:
+  enabled: false
+
+agentOAuthSecret:
+  enabled: false
+
+# ------------------------------------------------------------------
+#  Disable route processing job (causes timeouts)
+# ------------------------------------------------------------------
+processRoutes:
+  enabled: false
+
+# ------------------------------------------------------------------
+#  Environment URLs (direct, not from routes)
+# ------------------------------------------------------------------
+envUrls:
+  mcpInspector:
+    enabled: false
+  keycloak:
+    enabled: false
+  kiali:
+    enabled: false
+  mlflow:
+    enabled: true
+    url: "http://mlflow.rh-analyze.svc.cluster.local:5000"
+

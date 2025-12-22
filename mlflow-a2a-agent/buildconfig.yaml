@@ -1,0 +1,37 @@
+# OpenShift BuildConfig for MLflow A2A Agent
+#
+# Creates an ImageStream and BuildConfig for building the agent image
+# from source using a Dockerfile.
+#
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: mlflow-a2a-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: mlflow-a2a-agent
+    app.kubernetes.io/component: build
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: mlflow-a2a-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: mlflow-a2a-agent
+    app.kubernetes.io/component: build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: mlflow-a2a-agent:latest
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []
+

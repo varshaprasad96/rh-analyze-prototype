@@ -1,0 +1,51 @@
+# Kagenti Integration for kagent.dev Agent
+#
+# ⚠️ NOTE: This approach has significant limitations!
+# See README.md "Known Limitations" section for details.
+#
+# RECOMMENDED ALTERNATIVES:
+# 1. Use kagent-ui for kagent.dev agents (native support)
+# 2. Use MLflow ResponsesAgent with A2A wrapper for kagenti
+#
+# ---
+# The core problem is that kagenti-ui requires:
+# - agent.kagenti.dev resources with their own running pods
+# - AgentCard that syncs from an Agent in "Ready" state
+#
+# You cannot simply create a wrapper that reuses kagent.dev pods.
+# ---
+
+# If you still want to try the wrapper approach, here's the pattern:
+# (This will create a DUPLICATE pod running the same agent)
+
+---
+# Service Alias (port 8000 -> 8080)
+apiVersion: v1
+kind: Service
+metadata:
+  name: hello-kagent-svc
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent
+    kagent: hello-kagent
+    kagenti.io/type: agent
+spec:
+  selector:
+    app: kagent
+    kagent: hello-kagent
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8080
+
+# ---
+# BETTER APPROACH: MLflow ResponsesAgent + kagenti
+#
+# Instead of trying to wrap kagent.dev, build a dedicated agent:
+# 1. Create MLflow ResponsesAgent with Llama Stack
+# 2. Add A2A protocol wrapper (FastAPI)
+# 3. Deploy as agent.kagenti.dev
+#
+# See: ../mlflow-agent-helloworld/ for implementation
+# See: ../STRATEGY-COMPARISON-KAGENT-VS-MLFLOW-RESPONSESAGENT.md
