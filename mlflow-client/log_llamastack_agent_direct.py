@@ -62,13 +62,28 @@ def main():
         # Log using the file - the file has set_model() called in it
         # This is the LangGraph pattern: define agent in file, instantiate and set_model() in file
         agent_file = "llamastack_agent_wrapper_direct.py"
-        # Skip model registration for local testing (set to None)
-        # Set registered_model_name=model_name if you want to register it
-        logged_agent_info = mlflow.pyfunc.log_model(
-            python_model=agent_file,
-            artifact_path="agent",
-            registered_model_name=None,  # Skip registration for local testing
-        )
+        
+        # Try to register the model, but fall back to unregistered if registration fails
+        try:
+            logged_agent_info = mlflow.pyfunc.log_model(
+                python_model=agent_file,
+                artifact_path="agent",
+                registered_model_name=model_name,  # Register with name for easier access
+            )
+            print(f"✓ Model registered as: {model_name}")
+            print(f"  Serve with: mlflow models serve -m models:/{model_name}/latest -p 8080")
+        except Exception as e:
+            # If registration fails, log without registration
+            print(f"⚠️  Model registration failed: {e}")
+            print(f"   Logging model without registration (using run ID instead)...")
+            logged_agent_info = mlflow.pyfunc.log_model(
+                python_model=agent_file,
+                artifact_path="agent",
+                registered_model_name=None,  # Don't register
+            )
+            run_id = mlflow.active_run().info.run_id
+            print(f"✓ Model logged (unregistered)")
+            print(f"  Serve with: mlflow models serve -m runs:/{run_id}/agent -p 8080")
         
         # Log metadata
         mlflow.set_tag("agent_type", "llamastack-agent-wrapper-direct")

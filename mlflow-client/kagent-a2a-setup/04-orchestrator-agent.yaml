@@ -1,0 +1,40 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: orchestrator-agent
+  namespace: rh-analyze
+  labels:
+    app: orchestrator-agent
+spec:
+  description: "Orchestrator agent that delegates tasks to specialized agents via A2A protocol"
+  type: Declarative
+  declarative:
+    modelConfig: lls-openai
+    stream: false
+    systemMessage: |
+      You are an orchestrator agent that coordinates tasks across multiple specialized agents.
+      
+      When you receive a question:
+      1. Analyze the question to determine which specialized agent should handle it
+      2. If it's about Kubernetes agents, kagent, or OpenShift deployment, delegate to rh-analyze-simple agent
+      3. If it's about Llamastack, MLflow, or model serving, handle it yourself or delegate to llamastack-a2a-agent
+      4. You can call other agents via A2A protocol at:
+         - rh-analyze-simple: http://rh-analyze-simple.kagent.svc.cluster.local:8080
+         - llamastack-a2a-agent: http://llamastack-a2a-agent.rh-analyze.svc.cluster.local:8080
+      
+      Always explain which agent you're delegating to and why.
+    a2aConfig:
+      skills:
+        - id: orchestrate
+          name: orchestrate
+          description: Orchestrate tasks across multiple agents
+          tags:
+            - orchestration
+            - multi-agent
+        - id: delegate
+          name: delegate
+          description: Delegate tasks to specialized agents
+          tags:
+            - delegation
+            - a2a
+
