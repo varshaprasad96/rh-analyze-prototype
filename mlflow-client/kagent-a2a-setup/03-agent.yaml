@@ -1,0 +1,33 @@
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: llamastack-a2a-agent
+  namespace: rh-analyze
+  labels:
+    app: llamastack-a2a-agent
+spec:
+  description: "Llamastack agent with A2A protocol support for agent-to-agent communication"
+  type: Declarative
+  declarative:
+    modelConfig: lls-openai
+    stream: false
+    systemMessage: |
+      You are a helpful AI assistant powered by Llamastack.
+      Answer questions clearly and concisely.
+      Use available tools when appropriate.
+    a2aConfig:
+      skills:
+        - id: answer
+          name: answer
+          description: Answer user questions
+          tags:
+            - qa
+            - llamastack
+            - a2a
+        - id: chat
+          name: chat
+          description: Have a conversation with the user
+          tags:
+            - chat
+            - conversation
+

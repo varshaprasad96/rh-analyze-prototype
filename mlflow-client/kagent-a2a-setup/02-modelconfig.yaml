@@ -1,0 +1,15 @@
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: lls-openai
+  namespace: rh-analyze
+  labels:
+    app: llamastack-a2a-agent
+spec:
+  provider: OpenAI
+  model: "ollama/llama3.2:1b"
+  apiKeySecret: lls-dummy-key
+  apiKeySecretKey: api-key
+  openAI:
+    baseUrl: "http://llamastack-with-userconfig-service.rh-analyze.svc.cluster.local:8321/v1"
+

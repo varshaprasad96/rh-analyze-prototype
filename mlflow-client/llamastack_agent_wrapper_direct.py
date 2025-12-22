@@ -180,10 +180,15 @@ class LlamastackAgentWrapper(ResponsesAgent):
         try:
             # Create agent via Llamastack Agents API
             # POST /v1/agents with agent_config in the payload
+            # Build headers - only include Authorization if api_key is not "fake"
+            headers = {}
+            if self.api_key != "fake":
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
             response = requests.post(
                 f"{self.llamastack_base_url}/v1/agents",
                 json=agent_payload,
-                headers={"Authorization": f"Bearer {self.api_key}"} if self.api_key != "fake" else {},
+                headers=headers,
                 timeout=10
             )
             
@@ -270,13 +275,17 @@ class LlamastackAgentWrapper(ResponsesAgent):
         
         try:
             # Use Agents API for turn creation (enables tool calling)
+            # Build headers - only include Authorization if api_key is not "fake"
+            headers = {
+                "Accept": "text/event-stream" if turn_payload.get("stream") else "application/json",
+            }
+            if self.api_key != "fake":
+                headers["Authorization"] = f"Bearer {self.api_key}"
+            
             response = requests.post(
                 f"{self.llamastack_base_url}/v1/agents/{self.agent_id}/session/{session_id}/turn",
                 json=turn_payload,
-                headers={
-                    "Authorization": f"Bearer {self.api_key}" if self.api_key != "fake" else {},
-                    "Accept": "text/event-stream" if turn_payload.get("stream") else "application/json",
-                },
+                headers=headers,
                 stream=True,
                 timeout=30
             )
