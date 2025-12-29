@@ -1,0 +1,27 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kagent-response-proxy
+  namespace: mschimun
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kagent-response-proxy
+  namespace: mschimun
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: 'kagent-response-proxy:latest'
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers:
+    - type: ConfigChange
+

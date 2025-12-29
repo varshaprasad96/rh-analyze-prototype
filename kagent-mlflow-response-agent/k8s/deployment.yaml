@@ -1,0 +1,89 @@
+# Deployment for the MLflow ResponsesAgent adapter
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagent-mlflow-response-adapter
+  namespace: mschimun
+  labels:
+    app: kagent-mlflow-response-agent
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kagent-mlflow-response-adapter
+  template:
+    metadata:
+      labels:
+        app: kagent-mlflow-response-adapter
+    spec:
+      containers:
+        - name: adapter
+          image: image-registry.openshift-image-registry.svc:5000/mschimun/kagent-mlflow-response-agent:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: HOME
+              value: /tmp
+            - name: LLAMASTACK_URL
+              value: http://llama-stack-service.mschimun.svc.cluster.local:8321
+            - name: LLAMASTACK_MODEL
+              value: vllm-inference-1/qwen3-14b-awq
+            # Vector stores (comma-separated or JSON array)
+            - name: VECTOR_STORE_IDS
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorstore-config
+                  key: VECTOR_STORE_ID
+            - name: MAX_RESULTS
+              value: "5"
+            # MCP Tools (JSON array of server configs)
+            # Format: [{"server_url": "...", "server_label": "...", "authorization": "token"}]
+            - name: MCP_TOOLS
+              valueFrom:
+                secretKeyRef:
+                  name: mcp-tools-config
+                  key: MCP_TOOLS
+                  optional: true
+            - name: MLFLOW_TRACKING_URI
+              value: http://mlflow.mschimun.svc.cluster.local:5000
+            - name: MLFLOW_EXPERIMENT
+              value: kagent-mlflow-response-agent
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_PASSWORD
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://mlflow-minio.mschimun.svc.cluster.local:9000
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+      # No GPU required - schedule on any available node
+      tolerations:
+        - key: "nvidia.com/gpu"
+          operator: "Exists"
+          effect: "NoSchedule"
+

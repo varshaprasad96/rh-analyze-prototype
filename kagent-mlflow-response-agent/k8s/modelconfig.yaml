@@ -1,0 +1,16 @@
+# kagent ModelConfig pointing to our MLflow ResponsesAgent adapter
+apiVersion: kagent.dev/v1alpha2
+kind: ModelConfig
+metadata:
+  name: kagent-mlflow-response-agent-model
+  namespace: mschimun
+  labels:
+    app: kagent-mlflow-response-agent
+spec:
+  provider: OpenAI
+  model: vllm-inference-1/qwen3-14b-awq
+  apiKeySecret: kagent-mlflow-response-agent-key
+  apiKeySecretKey: api-key
+  openAI:
+    baseUrl: http://kagent-mlflow-response-adapter.mschimun.svc.cluster.local:8080/v1
+

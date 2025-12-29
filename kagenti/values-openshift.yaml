@@ -71,3 +71,4 @@ keycloak:
   adminPasswordKey: password
   # URLs will be set dynamically based on OpenShift routes
 
+

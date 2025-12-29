@@ -55,3 +55,4 @@ spec:
           configMap:
             name: otel-collector-config
 
+

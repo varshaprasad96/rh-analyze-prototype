@@ -161,3 +161,4 @@ echo "If SPIRE daemonsets show 0/0, run:"
 echo "  oc adm policy add-scc-to-user privileged -z spire-agent -n zero-trust-workload-identity-manager"
 echo "  kubectl rollout restart daemonsets -n zero-trust-workload-identity-manager"
 
+

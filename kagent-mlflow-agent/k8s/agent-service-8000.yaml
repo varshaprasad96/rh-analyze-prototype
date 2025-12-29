@@ -1,0 +1,24 @@
+# Optional: Kagenti UI often defaults to port 8000.
+# kagent services commonly expose 8080. This alias Service exposes 8000 -> 8080.
+apiVersion: v1
+kind: Service
+metadata:
+  name: kagent-mlflow-agent-8000
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-mlflow-agent
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+spec:
+  selector:
+    # Match labels created by the kagent controller for the agent's runtime pods
+    app: kagent
+    kagent: kagent-mlflow-agent
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP
+
+

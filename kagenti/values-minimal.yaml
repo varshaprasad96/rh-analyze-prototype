@@ -66,3 +66,4 @@ envUrls:
     enabled: true
     url: "http://mlflow.rh-analyze.svc.cluster.local:5000"
 
+

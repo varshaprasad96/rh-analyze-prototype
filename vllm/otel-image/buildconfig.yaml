@@ -1,0 +1,33 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: vllm-openai-otel
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: vllm-openai-otel
+    app.kubernetes.io/component: build
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: vllm-openai-otel
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: vllm-openai-otel
+    app.kubernetes.io/component: build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: vllm-openai-otel:latest
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []
+
+

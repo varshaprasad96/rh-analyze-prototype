@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kagent-mlflow-adapter
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app: kagent-mlflow-adapter
+    app.kubernetes.io/name: kagent-mlflow-adapter
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: kagent-mlflow-adapter
+  template:
+    metadata:
+      labels:
+        app: kagent-mlflow-adapter
+        app.kubernetes.io/name: kagent-mlflow-adapter
+    spec:
+      containers:
+        - name: adapter
+          image: IMAGE_PLACEHOLDER
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+          env:
+            - name: HOME
+              value: /tmp
+            # Llama Stack connection
+            - name: LLAMASTACK_URL
+              value: http://llama-stack-service.NAMESPACE_PLACEHOLDER.svc.cluster.local:8321
+            - name: LLAMASTACK_MODEL
+              value: vllm-inference-1/qwen3-14b-awq
+            # Vector store (existing)
+            - name: VECTOR_STORE_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: vectorstore-config
+                  key: VECTOR_STORE_ID
+            - name: SEARCH_MODE
+              value: hybrid
+            - name: MAX_RESULTS
+              value: "5"
+            # MLflow (in-cluster)
+            - name: MLFLOW_TRACKING_URI
+              value: http://mlflow.NAMESPACE_PLACEHOLDER.svc.cluster.local:5000
+            - name: MLFLOW_EXPERIMENT
+              value: kagent-mlflow-agent
+            # MLflow artifact store (MinIO) - required for mlflow.log_text() uploads
+            - name: MLFLOW_S3_ENDPOINT_URL
+              value: http://mlflow-minio.NAMESPACE_PLACEHOLDER.svc.cluster.local:9000
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_USER
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: mlflow-minio-secret
+                  key: MINIO_ROOT_PASSWORD
+          readinessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+
+

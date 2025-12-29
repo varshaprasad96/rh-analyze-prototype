@@ -23,8 +23,6 @@ spec:
     - --port=8080
     - --model=/mnt/models
     - --served-model-name={{.Name}}
-    # OpenTelemetry tracing - sends traces to OTEL Collector
-    - --otlp-traces-endpoint=http://otel-collector.NAMESPACE_PLACEHOLDER.svc.cluster.local:4317
     command:
     - python3
     - -m
@@ -36,12 +34,9 @@ spec:
       value: /tmp
     - name: VLLM_USAGE_SOURCE
       value: production-docker-image
-    # OpenTelemetry configuration
-    - name: OTEL_SERVICE_NAME
-      value: "vllm-qwen3"
-    - name: OTEL_EXPORTER_OTLP_TRACES_INSECURE
-      value: "true"
-    image: vllm/vllm-openai:latest
+    # Use an OpenShift-built image that includes OpenTelemetry deps so the platform-injected
+    # --otlp-traces-endpoint flag doesn't crash vLLM.
+    image: image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/vllm-openai-otel:latest
     name: kserve-container
     ports:
     - containerPort: 8080

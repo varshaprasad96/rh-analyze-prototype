@@ -6,12 +6,10 @@ wrapped in MLflow's ResponsesAgent for automatic tracing.
 """
 import os
 import logging
-from typing import Generator, List, Dict, Any, Optional, Union
+from typing import Generator, List, Dict, Any, Optional
 from uuid import uuid4
 
-from llama_stack_client import LlamaStackClient
-from llama_stack_client.lib.agents.agent import Agent
-from llama_stack_client.types.shared_params.agent_config import Toolgroup
+import httpx
 
 import mlflow
 from mlflow.pyfunc import ResponsesAgent
@@ -29,10 +27,10 @@ logger = logging.getLogger(__name__)
 
 class LlamaStackAgentWrapper(ResponsesAgent):
     """
-    Wraps a Llama Stack agent using the official SDK in MLflow's ResponsesAgent interface.
+    Wraps Llama Stack API calls in MLflow's ResponsesAgent interface.
     
     Features:
-    - Uses llama-stack-client's Agent class for session/turn management
+    - Direct calls to Llama Stack Agents API
     - Supports RAG via builtin::rag toolgroup
     - Supports dynamic MCP tools via MCP_SERVERS_JSON
     - MLflow auto-tracing enabled
@@ -49,78 +47,18 @@ class LlamaStackAgentWrapper(ResponsesAgent):
         
         # Lazy initialization - avoid creating client in __init__ for serialization
         self._client = None
-        self._agent = None
-        self._session_id = None
         
         logger.info(f"LlamaStackAgentWrapper initialized")
         logger.info(f"  URL: {self.llamastack_url}")
         logger.info(f"  Model: {self.model}")
     
     @property
-    def client(self) -> LlamaStackClient:
-        """Lazy-load the Llama Stack client."""
+    def client(self) -> httpx.Client:
+        """Lazy-load the HTTP client."""
         if self._client is None:
-            self._client = LlamaStackClient(base_url=self.llamastack_url)
-            logger.info(f"Created LlamaStackClient for {self.llamastack_url}")
+            self._client = httpx.Client(base_url=self.llamastack_url, timeout=60.0)
+            logger.info(f"Created HTTP client for {self.llamastack_url}")
         return self._client
-    
-    @property
-    def agent(self) -> Agent:
-        """Lazy-load the Agent instance."""
-        if self._agent is None:
-            self._agent = self._create_agent()
-        return self._agent
-    
-    def _build_tools(self) -> List[Union[Toolgroup, Any]]:
-        """Build the tools list from environment configuration."""
-        tools = []
-        
-        # Add RAG toolgroup if enabled
-        rag_enabled = os.getenv("RAG_ENABLED", "false").lower() == "true"
-        if rag_enabled:
-            vector_store_ids = os.getenv("VECTOR_STORE_IDS", "")
-            vector_db_ids = [v.strip() for v in vector_store_ids.split(",") if v.strip()]
-            
-            if vector_db_ids:
-                tools.append(Toolgroup(
-                    name="builtin::rag",
-                    args={"vector_db_ids": vector_db_ids}
-                ))
-                logger.info(f"Added RAG toolgroup with vector DBs: {vector_db_ids}")
-            else:
-                logger.warning("RAG_ENABLED=true but no VECTOR_STORE_IDS provided")
-        
-        # Add MCP client tools
-        try:
-            mcp_tools = create_mcp_client_tools()
-            tools.extend(mcp_tools)
-            logger.info(f"Added {len(mcp_tools)} MCP tools")
-        except Exception as e:
-            logger.error(f"Failed to create MCP tools: {e}")
-        
-        return tools
-    
-    def _create_agent(self) -> Agent:
-        """Create the Llama Stack Agent instance."""
-        tools = self._build_tools()
-        
-        agent = Agent(
-            client=self.client,
-            model=self.model,
-            instructions=self.instructions,
-            tools=tools if tools else None,
-        )
-        
-        logger.info(f"Created Agent with {len(tools)} tools")
-        return agent
-    
-    def _get_or_create_session(self) -> str:
-        """Get existing session or create a new one."""
-        if self._session_id is None:
-            session_name = f"a2a-session-{uuid4().hex[:8]}"
-            self._session_id = self.agent.create_session(session_name)
-            logger.info(f"Created new session: {self._session_id}")
-        return self._session_id
     
     def _convert_messages(self, request: ResponsesAgentRequest) -> List[Dict[str, Any]]:
         """Convert ResponsesAgentRequest input to Llama Stack message format."""
@@ -175,50 +113,39 @@ class LlamaStackAgentWrapper(ResponsesAgent):
         self, request: ResponsesAgentRequest
     ) -> Generator[ResponsesAgentStreamEvent, None, None]:
         """
-        Process a request and stream responses from the Llama Stack agent.
+        Process a request and stream responses from Llama Stack.
         
-        Uses the Agent's create_turn method with streaming.
+        Uses the chat completions API endpoint (OpenAI-compatible).
         """
         messages = self._convert_messages(request)
-        session_id = self._get_or_create_session()
         
-        logger.info(f"Creating turn with {len(messages)} messages")
+        logger.info(f"Creating chat completion with {len(messages)} messages")
         
         item_id = f"msg_{uuid4().hex[:8]}"
         accumulated_text = ""
         
         try:
-            # Use streaming turn
-            for chunk in self.agent.create_turn(messages, session_id, stream=True):
-                event = chunk.event
-                
-                # Handle different event types from the SDK
-                if hasattr(event, 'delta') and hasattr(event.delta, 'text'):
-                    delta_text = event.delta.text
-                    if delta_text:
-                        accumulated_text += delta_text
-                        yield ResponsesAgentStreamEvent(
-                            **self.create_text_delta(
-                                delta=delta_text,
-                                item_id=item_id,
-                            )
-                        )
-                
-                # Check if turn is complete
-                if chunk.response is not None:
-                    # Turn completed - emit final output item
-                    if accumulated_text:
-                        yield ResponsesAgentStreamEvent(
-                            type="response.output_item.done",
-                            item=self.create_text_output_item(
-                                text=accumulated_text,
-                                id=item_id,
-                            ),
-                        )
-                    break
+            # Use chat completions API (OpenAI-compatible)
+            response = self.client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": self.model,
+                    "messages": messages,
+                    "stream": False
+                }
+            )
+            response.raise_for_status()
+            result = response.json()
             
-            # If we didn't emit anything, emit the accumulated text
-            if accumulated_text and not any(True for _ in []):
+            # Extract response from choices
+            if "choices" in result and len(result["choices"]) > 0:
+                message = result["choices"][0].get("message", {})
+                content = message.get("content", "")
+                if content:
+                    accumulated_text = content
+            
+            # Emit final output
+            if accumulated_text:
                 yield ResponsesAgentStreamEvent(
                     type="response.output_item.done",
                     item=self.create_text_output_item(
@@ -226,9 +153,18 @@ class LlamaStackAgentWrapper(ResponsesAgent):
                         id=item_id,
                     ),
                 )
+            else:
+                # Empty response
+                yield ResponsesAgentStreamEvent(
+                    type="response.output_item.done",
+                    item=self.create_text_output_item(
+                        text="(No response from LLM)",
+                        id=item_id,
+                    ),
+                )
                 
         except Exception as e:
-            logger.error(f"Error during turn: {e}")
+            logger.error(f"Error during chat completion: {e}", exc_info=True)
             # Emit error as text output
             yield ResponsesAgentStreamEvent(
                 type="response.output_item.done",

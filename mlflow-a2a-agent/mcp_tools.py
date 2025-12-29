@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 from functools import partial
 
 import httpx
-from llama_stack_client.lib.agents.client_tool import ClientTool, client_tool
 from typing import List, Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -131,32 +130,31 @@ def call_mcp_tool(
         return f"Error calling tool: {e}"
 
 
-def create_mcp_tool_function(server_config: Dict[str, Any], tool_def: Dict[str, Any]):
+def create_mcp_tool_dict(server_config: Dict[str, Any], tool_def: Dict[str, Any]) -> Dict[str, Any]:
     """
-    Create a Python function that wraps an MCP tool call.
-    This function will be decorated with @client_tool to make it usable by the Agent.
+    Create a tool definition dictionary for Llama Stack.
+    
+    Returns a tool in the format expected by Llama Stack agents API.
     """
-    tool_name = tool_def.get("name", "")
+    tool_name = f"{server_config['name']}_{tool_def.get('name', '')}"
     
-    def mcp_tool_function(**kwargs) -> str:
-        """Dynamically created MCP tool function."""
-        result = call_mcp_tool(server_config, tool_name, kwargs)
-        return str(result)
-    
-    # Set function metadata for the ClientTool decorator
-    mcp_tool_function.__name__ = f"{server_config['name']}_{tool_name}"
-    mcp_tool_function.__doc__ = tool_def.get("description", "MCP tool")
-    
-    return mcp_tool_function
+    return {
+        "type": "function",
+        "function": {
+            "name": tool_name,
+            "description": tool_def.get("description", "MCP tool"),
+            "parameters": tool_def.get("inputSchema", {})
+        }
+    }
 
 
-def create_mcp_client_tools() -> List[Any]:
+def create_mcp_client_tools() -> List[Dict[str, Any]]:
     """
-    Create ClientTools for each MCP server/tool combination.
+    Create tool definitions for each MCP server/tool combination.
     
-    Returns a list of tool functions that can be passed to the Agent.
+    Returns a list of tool dictionaries for Llama Stack.
     """
-    tools: List[Any] = []
+    tools: List[Dict[str, Any]] = []
     
     for server_config in load_mcp_config():
         server_name = server_config.get("name", "unknown")
@@ -175,11 +173,10 @@ def create_mcp_client_tools() -> List[Any]:
                 logger.debug(f"Skipping tool {tool_name} (not in whitelist)")
                 continue
             
-            # Create tool function and decorate it
-            tool_func = create_mcp_tool_function(server_config, tool_def)
-            decorated_tool = client_tool(tool_func)
-            tools.append(decorated_tool)
-            logger.info(f"Registered tool: {tool_func.__name__}")
+            # Create tool dictionary
+            tool_dict = create_mcp_tool_dict(server_config, tool_def)
+            tools.append(tool_dict)
+            logger.info(f"Registered tool: {tool_dict['function']['name']}")
     
     logger.info(f"Total MCP tools registered: {len(tools)}")
     return tools

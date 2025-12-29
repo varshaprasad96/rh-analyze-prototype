@@ -78,3 +78,4 @@ oc logs -n ${NAMESPACE} -l app=otel-collector -f
 
 The collector includes debug logging - check for trace reception and export status.
 
+
