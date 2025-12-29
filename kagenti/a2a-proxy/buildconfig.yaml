@@ -1,0 +1,33 @@
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kagenti-a2a-proxy
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: kagenti-a2a-proxy
+    app.kubernetes.io/component: build
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kagenti-a2a-proxy
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: kagenti-a2a-proxy
+    app.kubernetes.io/component: build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kagenti-a2a-proxy:latest
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []
+
+

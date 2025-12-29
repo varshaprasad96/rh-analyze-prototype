@@ -1,0 +1,36 @@
+# OpenShift BuildConfig for kagent-mlflow-agent adapter
+#
+# Builds the adapter image from this directory (Dockerfile).
+---
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  name: kagent-mlflow-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: kagent-mlflow-agent
+    app.kubernetes.io/component: build
+---
+apiVersion: build.openshift.io/v1
+kind: BuildConfig
+metadata:
+  name: kagent-mlflow-agent
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: kagent-mlflow-agent
+    app.kubernetes.io/component: build
+spec:
+  output:
+    to:
+      kind: ImageStreamTag
+      name: kagent-mlflow-agent:latest
+  source:
+    type: Binary
+    binary: {}
+  strategy:
+    type: Docker
+    dockerStrategy:
+      dockerfilePath: Dockerfile
+  triggers: []
+
+

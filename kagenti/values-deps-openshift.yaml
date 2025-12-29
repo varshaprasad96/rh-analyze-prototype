@@ -75,3 +75,4 @@ keycloak:
     adminUser: keycloakadmin
     # adminPassword should be changed or set via secrets
 
+

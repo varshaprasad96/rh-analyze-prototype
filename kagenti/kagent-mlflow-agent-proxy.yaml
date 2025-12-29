@@ -1,0 +1,81 @@
+# Kagenti UI only lists `agent.kagenti.dev` Agent CRs.
+# This wrapper Agent deploys a tiny reverse-proxy that forwards A2A traffic
+# to the real kagent-managed agent service (`kagent-mlflow-agent:8080`).
+#
+# Result:
+# - Appears in Kagenti UI Agent Catalog
+# - A2A chat goes through kagent runtime (so A2A/SSE semantics stay correct)
+# - MLflow logging still happens server-side in the adapter
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kagent-mlflow-agent-proxy-nginx
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    app.kubernetes.io/name: kagent-mlflow-agent-proxy
+data:
+  # Kept for compatibility; the proxy image bakes its own config.
+  nginx.conf: |
+    # (unused) See: kagenti/a2a-proxy/nginx.conf
+    worker_processes  1;
+    events { worker_connections  1024; }
+    http { server { listen 8000; location / { return 200 'ok'; } } }
+---
+apiVersion: agent.kagenti.dev/v1alpha1
+kind: Agent
+metadata:
+  name: kagent-mlflow-agent-proxy
+  namespace: NAMESPACE_PLACEHOLDER
+  labels:
+    kagenti.io/type: agent
+    kagenti.io/protocol: a2a
+    kagenti.io/framework: kagent
+    app.kubernetes.io/name: kagent-mlflow-agent-proxy
+    app.kubernetes.io/component: agent
+spec:
+  description: "Kagenti-visible wrapper that proxies A2A to the kagent-managed 'kagent-mlflow-agent' service (MLflow tracked + RAG)."
+  replicas: 1
+  imageSource:
+    # Built in-cluster: UBI nginx runtime configured for OpenShift arbitrary UID
+    image: image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/kagenti-a2a-proxy:latest
+  servicePorts:
+    - name: http
+      port: 8000
+      targetPort: 8000
+      protocol: TCP
+  podTemplateSpec:
+    metadata:
+      labels:
+        kagenti.io/type: agent
+        kagenti.io/protocol: a2a
+        kagenti.io/framework: kagent
+        app.kubernetes.io/name: kagent-mlflow-agent-proxy
+    spec:
+      serviceAccountName: default
+      containers:
+        - name: proxy
+          image: image-registry.openshift-image-registry.svc:5000/NAMESPACE_PLACEHOLDER/kagenti-a2a-proxy:latest
+          ports:
+            - containerPort: 8000
+              protocol: TCP
+          readinessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          livenessProbe:
+            tcpSocket:
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+      volumes: []
+
+

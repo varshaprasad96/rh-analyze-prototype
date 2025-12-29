@@ -32,6 +32,10 @@ spec:
       port: 8080
       targetPort: 8080
       protocol: TCP
+    - name: http-8000
+      port: 8000
+      targetPort: 8080
+      protocol: TCP
   podTemplateSpec:
     metadata:
       labels:
@@ -70,7 +74,7 @@ spec:
             # Llama Stack Configuration
             # ============================================================
             - name: LLAMASTACK_URL
-              value: "http://llamastack-with-userconfig-service:8321"
+              value: "http://llama-stack-service:8321"
             - name: LLAMASTACK_MODEL
               value: "meta-llama/Llama-3.2-3B-Instruct"
             - name: SYSTEM_PROMPT

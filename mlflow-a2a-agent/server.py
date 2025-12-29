@@ -3,18 +3,20 @@ A2A Protocol Server
 
 FastAPI server exposing A2A (Agent-to-Agent) protocol endpoints:
 - GET /.well-known/agent.json - Agent card (discovery)
-- POST / - JSON-RPC endpoint for A2A tasks
+- POST / - JSON-RPC endpoint for A2A tasks (with SSE streaming support)
 """
 import os
 import json
 import logging
-from typing import Any, Dict, List, Optional
+import asyncio
+from typing import Any, Dict, List, Optional, AsyncGenerator
 from uuid import uuid4
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Response, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 import uvicorn
 
 from agent_wrapper import LlamaStackAgentWrapper
@@ -165,8 +167,119 @@ def add_task_artifact(task_id: str, artifact: TaskArtifact):
 # JSON-RPC Handler
 # ============================================================================
 
+async def handle_tasks_send_stream(params: Dict[str, Any]) -> AsyncGenerator[str, None]:
+    """Handle tasks/send with SSE streaming."""
+    global agent
+    
+    if agent is None:
+        agent = LlamaStackAgentWrapper()
+    
+    # Extract message from params
+    message = params.get("message", {})
+    task_id = params.get("id") or f"task_{uuid4().hex[:12]}"
+    
+    # Create task
+    task = create_task(task_id)
+    task_id = task.id
+    
+    # Send task status update: working
+    update_task_status(task_id, "working")
+    yield json.dumps({
+        "type": "task.status.update",
+        "taskId": task_id,
+        "status": {"state": "working"}
+    })
+    
+    try:
+        # Convert A2A message to ResponsesAgentRequest format
+        parts = message.get("parts", [])
+        content = ""
+        for part in parts:
+            if isinstance(part, dict):
+                if part.get("kind") == "text" or part.get("type") == "text":
+                    content += part.get("text", "")
+            elif hasattr(part, "text"):
+                content += part.text
+        
+        # Build request
+        request = ResponsesAgentRequest(
+            input=[{"role": message.get("role", "user"), "content": content}]
+        )
+        
+        # Stream from agent
+        accumulated_text = ""
+        artifact_id = f"artifact_{uuid4().hex[:8]}"
+        
+        # Run synchronous predict_stream in executor to avoid blocking
+        loop = asyncio.get_event_loop()
+        
+        def stream_agent():
+            results = []
+            for event in agent.predict_stream(request):
+                results.append(event)
+            return results
+        
+        events = await loop.run_in_executor(None, stream_agent)
+        
+        for event in events:
+            if event.type == "response.output_item.done":
+                # Extract text from output item
+                if hasattr(event.item, "text"):
+                    accumulated_text = event.item.text
+                elif isinstance(event.item, dict) and "text" in event.item:
+                    accumulated_text = event.item["text"]
+                
+                # Send artifact update
+                yield json.dumps({
+                    "type": "task.artifact.update",
+                    "taskId": task_id,
+                    "artifact": {
+                        "artifactId": artifact_id,
+                        "parts": [{"kind": "text", "text": accumulated_text}]
+                    }
+                })
+                
+                await asyncio.sleep(0.01)  # Small delay for stream
+        
+        # Create final artifact
+        artifact = TaskArtifact(
+            name="response",
+            parts=[{"type": "text", "text": accumulated_text}]
+        )
+        add_task_artifact(task_id, artifact)
+        update_task_status(task_id, "completed")
+        
+        # Send artifact done
+        yield json.dumps({
+            "type": "task.artifact.done",
+            "taskId": task_id,
+            "artifact": {
+                "artifactId": artifact_id,
+                "parts": [{"kind": "text", "text": accumulated_text}]
+            }
+        })
+        
+        # Send completion event
+        yield json.dumps({
+            "type": "task.complete",
+            "taskId": task_id,
+            "status": {"state": "completed"}
+        })
+        
+    except Exception as e:
+        logger.error(f"Task failed: {e}", exc_info=True)
+        update_task_status(task_id, "failed", str(e))
+        
+        # Send error event
+        yield json.dumps({
+            "type": "task.status.update",
+            "taskId": task_id,
+            "status": {"state": "failed", "message": str(e)}
+        })
+
+
 async def handle_tasks_send(params: Dict[str, Any]) -> Dict[str, Any]:
-    """Handle tasks/send JSON-RPC method."""
+    """Handle tasks/send JSON-RPC method (non-streaming fallback)."""
     global agent
     
     if agent is None:
@@ -187,8 +300,9 @@ async def handle_tasks_send(params: Dict[str, Any]) -> Dict[str, Any]:
         parts = message.get("parts", [])
         content = ""
         for part in parts:
-            if part.get("type") == "text":
-                content += part.get("text", "")
+            if isinstance(part, dict):
+                if part.get("kind") == "text" or part.get("type") == "text":
+                    content += part.get("text", "")
         
         # Build request
         request = ResponsesAgentRequest(
@@ -288,10 +402,22 @@ async def json_rpc_endpoint(request: Request):
     - tasks/send: Submit a task to the agent
     - tasks/get: Get task status and results
     - tasks/cancel: Cancel a running task
+    
+    Supports both SSE streaming (for tasks/send) and regular JSON responses.
     """
+    # Log all headers for debugging
+    logger.info(f"POST / - Headers: {dict(request.headers)}")
+    
+    # Check if client wants SSE streaming
+    accept_header = request.headers.get("accept", "")
+    wants_sse = "text/event-stream" in accept_header
+    logger.info(f"POST / - Accept: {accept_header}, wants_sse: {wants_sse}")
+    
     try:
         body = await request.json()
+        logger.info(f"Request body parsed: method={body.get('method')}")
     except Exception as e:
+        logger.error(f"Failed to parse JSON body: {e}")
         return JSONResponse(
             status_code=400,
             content={
@@ -317,7 +443,33 @@ async def json_rpc_endpoint(request: Request):
     params = body.get("params", {})
     request_id = body.get("id")
     
-    # Handle method
+    logger.info(f"Method: {method}, wants_sse: {wants_sse}, request_id: {request_id}")
+    
+    # Special handling for tasks/send OR messages/send with SSE streaming
+    if method in ["tasks/send", "messages/send", "tasks/sendStreaming", "messages/sendStreaming"] and wants_sse:
+        logger.info(f"✅ ENTERING SSE PATH for method={method}")
+        
+        async def event_generator():
+            """Generate SSE events for task execution."""
+            logger.info("SSE event_generator started")
+            try:
+                async for event_data in handle_tasks_send_stream(params):
+                    # Yield SSE formatted event
+                    yield f"data: {event_data}\n\n"
+            except Exception as e:
+                logger.error(f"Error in SSE stream: {e}", exc_info=True)
+                error_event = json.dumps({
+                    "type": "error",
+                    "message": str(e)
+                })
+                yield f"data: {error_event}\n\n"
+        
+        logger.info("⚡ Returning EventSourceResponse with content-type: text/event-stream")
+        return EventSourceResponse(event_generator())
+    
+    logger.info(f"⚠️ NOT taking SSE path (method={method}, wants_sse={wants_sse})")
+    
+    # Handle method via regular JSON-RPC
     handler = JSON_RPC_METHODS.get(method)
     if handler is None:
         return JSONResponse(
